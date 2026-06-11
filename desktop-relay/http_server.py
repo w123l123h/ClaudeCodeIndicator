@@ -29,7 +29,7 @@ class HttpRelayServer:
             body = await request.json()
         except Exception:
             logger.warning("Invalid JSON in hook request")
-            return web.Response(status=400, text="Bad JSON")
+            return web.json_response({"status": "error", "message": "Bad JSON"}, status=400)
 
         hook_event = body.get("hook_event_name", "")
         logger.info(f"HTTP hook: {hook_event}")
