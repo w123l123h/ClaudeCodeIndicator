@@ -32,7 +32,7 @@ def install_deps():
 
 
 def setup_hooks():
-    """配置 Claude Code hooks — HTTP 类型，4 种通知状态"""
+    """配置 Claude Code hooks — HTTP 类型，5 种通知状态"""
     settings_path = Path.home() / ".claude" / "settings.json"
 
     # 读取现有配置
