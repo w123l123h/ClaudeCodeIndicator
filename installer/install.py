@@ -45,7 +45,7 @@ def setup_hooks():
     http_hook = {"type": "http", "url": hook_url}
 
     settings["hooks"] = {
-        "UserPromptExpansion": [
+        "UserPromptSubmit": [
             {"matcher": "*", "hooks": [http_hook]}
         ],
         "PreToolUse": [
@@ -88,7 +88,7 @@ def verify():
         with open(settings_path) as f:
             data = json.load(f)
             hooks = data.get("hooks", {})
-            for event in ["UserPromptExpansion", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]:
+            for event in ["UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]:
                 if event in hooks:
                     # 检查是否为 HTTP hook
                     entry = hooks[event][0]

@@ -9,7 +9,7 @@
 
 ### Requirement: 状态事件类型
 通知脚本 SHALL 支持以下 Hook 事件映射：
-- 用户消息展开（UserPromptExpansion 触发）→ `WORKING`
+- 用户消息提交（UserPromptSubmit 触发）→ `WORKING`
 - 工具调用开始（PreToolUse 触发）→ `WORKING`
 - 等待用户确认（PermissionRequest 触发）→ `WAITING_USER`
 - 任务停止（Stop 触发）→ `COMPLETED` 或 `ERROR`
@@ -18,8 +18,8 @@
 - **WHEN** Claude Code 开始执行工具调用
 - **THEN** 通过 TCP 向 `127.0.0.1:54321` 发送消息 `WORKING`
 
-#### Scenario: 用户消息展开通知
-- **WHEN** 用户在 Claude Code 中输入消息（UserPromptExpansion 触发）
+#### Scenario: 用户消息提交通知
+- **WHEN** 用户在 Claude Code 中输入消息（UserPromptSubmit 触发）
 - **THEN** 通过 HTTP POST 向 `http://127.0.0.1:54321/hook` 发送事件
 - **THEN** 电脑端主程序通过 BLE 发送 `WORKING` 消息
 - **THEN** 指示灯 LED2 显示橙色常亮

@@ -48,7 +48,7 @@ class HttpRelayServer:
             if body.get("tool_name") == "AskUserQuestion":
                 return "WAITING_USER"
             return "WORKING"
-        elif hook_event == "UserPromptExpansion":
+        elif hook_event == "UserPromptSubmit":
             return "WORKING"
         elif hook_event in ("PermissionRequest",):
             # 权限弹窗 = 需要用户介入 → 闪烁
