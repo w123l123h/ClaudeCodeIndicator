@@ -1,0 +1,29 @@
+[2026-06-11T21:10:38.223306] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit
+[2026-06-11T21:11:32.112002] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit
+  prompt: 2026-06-11 21:10:59,894 [http_server] INFO: HTTP hook: UserPromptSubmit
+2026-06-11 21:10:59,894 [aio
+---
+[2026-06-11T21:13:14.923450] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit
+[2026-06-11T21:14:08.389677] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit
+  prompt: 你好
+---
+[2026-06-11T21:15:14.989027] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit
+[2026-06-11T21:21:16.773631] Hook fired!
+  args: ['D:/develop/projects/esp32Projects/ClaudeCodeIndicator/hook-notifier/test_hook.py']
+  context keys: ['session_id', 'transcript_path', 'cwd', 'permission_mode', 'hook_event_name', 'prompt']
+  hook_event_name: UserPromptSubmit

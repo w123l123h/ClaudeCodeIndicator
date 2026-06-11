@@ -1,0 +1,28 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  },
+  "theme": "dark",
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "*", "hooks": [
+        {"type": "http", "url": "http://127.0.0.1:54321/hook"}
+      ]}
+    ],
+    "PermissionRequest": [
+      {"matcher": "*", "hooks": [
+        {"type": "http", "url": "http://127.0.0.1:54321/hook"}
+      ]}
+    ],
+    "PostToolUse": [
+      {"matcher": "*", "hooks": [
+        {"type": "http", "url": "http://127.0.0.1:54321/hook"}
+      ]}
+    ],
+    "Stop": [
+      {"matcher": "*", "hooks": [
+        {"type": "http", "url": "http://127.0.0.1:54321/hook"}
+      ]}
+    ]
+  }
+}
