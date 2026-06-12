@@ -25,25 +25,25 @@ DEVICE_CONFIG_FILE = "device.json"
 EVENT_LED_MAP = {
     "WORKING": {
         "leds": [
-            {"id": 1, "on": True,  "r": 255, "g": 128, "b": 0},
+            {"id": 1, "on": True,  "r": 255, "g": 128, "b": 0, "timeout": 300},
             {"id": 2, "on": False},
         ]
     },
     "WAITING_USER": {
         "leds": [
-            {"id": 1, "on": True,  "r": 255, "g": 128, "b": 0, "blink": True},
+            {"id": 1, "on": True,  "r": 255, "g": 128, "b": 0, "blink": True, "blink_ms": 300, "timeout": 300},
             {"id": 2, "on": False},
         ]
     },
     "COMPLETED": {
         "leds": [
             {"id": 1, "on": False},
-            {"id": 2, "on": True,  "r": 0, "g": 255, "b": 0},
+            {"id": 2, "on": True,  "r": 0, "g": 255, "b": 0, "timeout": 300},
         ]
     },
     "ERROR": {
         "leds": [
-            {"id": 0, "on": True,  "r": 255, "g": 0, "b": 0},
+            {"id": 0, "on": True,  "r": 255, "g": 0, "b": 0, "timeout": 300},
             {"id": 1, "on": False},
             {"id": 2, "on": False},
         ]
