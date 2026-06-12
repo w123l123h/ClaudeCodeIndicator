@@ -250,6 +250,9 @@ static void battery_low_callback(bool low)
         g_led_states[0].g = 0;
         g_led_states[0].b = 0;
         g_led_states[0].blink = true;
+        g_led_states[0].blink_ms = LED_BLINK_PERIOD_MS;
+        g_led_states[0].blink_counter = 0;
+        g_led_states[0].blink_on = false;
         ESP_LOGW(TAG, "Battery LOW (<= 3.5V) — LED0 red blink");
     } else {
         g_led_states[0].blink = false;
@@ -319,7 +322,6 @@ extern "C" void app_main(void)
     // 主循环：处理 LED 闪烁（per-LED timing via fast tick + counter）
     while (true) {
         for (int i = 0; i < 3; i++) {
-            if (g_battery_low && i == 0) continue;
             LedState& s = g_led_states[i];
             if (s.blink && s.blink_ms > 0) {
                 s.blink_counter += BLINK_TICK_MS;
