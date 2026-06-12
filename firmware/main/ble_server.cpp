@@ -13,14 +13,10 @@
 
 static const char* TAG = "ble";
 
-// NimBLE 全局变量
-static uint16_t g_conn_handle = 0;
-static uint8_t g_own_addr_type = BLE_OWN_ADDR_PUBLIC;
-static ble_message_cb_t g_msg_cb = nullptr;
-static ble_connect_cb_t g_conn_cb = nullptr;
-static bool g_ready = false;
+// 单例指针（由 init() 设置）
+BleServer* BleServer::s_instance = nullptr;
 
-// GATT characteristic 定义
+// GATT characteristic UUID 定义（静态常量，不属于实例）
 static const ble_uuid128_t g_svc_uuid =
     BLE_UUID128_INIT(0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80,
                      0x00, 0x10, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00);
@@ -28,23 +24,18 @@ static const ble_uuid128_t g_char_uuid =
     BLE_UUID128_INIT(0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80,
                      0x00, 0x10, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00);
 
-static uint16_t g_char_val_handle;
-
-// 前向声明
-static int gatt_write_cb(uint16_t conn_handle, uint16_t attr_handle,
-                         struct ble_gatt_access_ctxt* ctxt, void* arg);
-
-// GATT service 静态定义
+// GATT characteristic 定义（含 arg 指向 s_instance，用于 gatt_write_cb）
 static struct ble_gatt_chr_def g_chr_defs[] = {
     {
         .uuid = &g_char_uuid.u,
-        .access_cb = gatt_write_cb,
+        .access_cb = BleServer::gatt_write_cb,
         .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
-        .val_handle = &g_char_val_handle,
+        .val_handle = nullptr,  // 将在 init() 中设置为 &m_char_val_handle
     },
     { 0 }
 };
 
+// GATT service 定义
 static struct ble_gatt_svc_def g_svc_defs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -54,11 +45,15 @@ static struct ble_gatt_svc_def g_svc_defs[] = {
     { 0 }
 };
 
-// GATT 写回调
-static int gatt_write_cb(uint16_t conn_handle, uint16_t attr_handle,
-                         struct ble_gatt_access_ctxt* ctxt, void* arg)
+// ============ BleServer static 成员函数 ============
+
+int BleServer::gatt_write_cb(uint16_t conn_handle, uint16_t attr_handle,
+                             struct ble_gatt_access_ctxt* ctxt, void* arg)
 {
-    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR && g_msg_cb && ctxt->om) {
+    BleServer* self = static_cast<BleServer*>(arg);
+    if (!self) return 0;
+
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR && self->m_msg_cb && ctxt->om) {
         char buf[128];
         int len = ctxt->om->om_len;
         if (len > 127) len = 127;
@@ -69,37 +64,63 @@ static int gatt_write_cb(uint16_t conn_handle, uint16_t attr_handle,
             buf[--len] = 0;
         }
         ESP_LOGI(TAG, "Received: %s", buf);
-        g_msg_cb(buf);
+        self->m_msg_cb(buf);
+
+        // 喂狗：收到任何数据时重置看门狗
+        self->reset_watchdog();
     }
     return 0;
 }
 
-// GAP 事件回调
-static int gap_event_cb(struct ble_gap_event* event, void* arg)
+int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
 {
+    BleServer* self = s_instance;
+    if (!self) return 0;
+
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
-            g_conn_handle = event->connect.conn_handle;
-            ESP_LOGI(TAG, "Connected, handle=%d", g_conn_handle);
-            if (g_conn_cb) g_conn_cb(true);
+            self->m_conn_handle = event->connect.conn_handle;
+            ESP_LOGI(TAG, "Connected, handle=%d", self->m_conn_handle);
+            if (self->m_conn_cb) self->m_conn_cb(true);
+
+            // 看门狗在 PAIR_SUCCESS 后才启动，避免配对期间误触发
+
+            // 设置连接参数（缩短 supervision timeout 到 4s）
+            {
+                struct ble_gap_upd_params params = {};
+                // ms → 1.25ms units: *4/5
+                params.itvl_min = (BLE_CONN_INTERVAL_MIN * 4) / 5;
+                params.itvl_max = (BLE_CONN_INTERVAL_MAX * 4) / 5;
+                params.latency = BLE_SLAVE_LATENCY;
+                params.supervision_timeout = BLE_SUPERVISION_TIMEOUT;  // *10ms
+                params.min_ce_len = 0;
+                params.max_ce_len = 0;
+                int rc = ble_gap_update_params(self->m_conn_handle, &params);
+                if (rc != 0) {
+                    ESP_LOGW(TAG, "ble_gap_update_params failed: %d", rc);
+                } else {
+                    ESP_LOGI(TAG, "Connection params set: itvl=%d-%dms, sup_to=%dms",
+                             BLE_CONN_INTERVAL_MIN, BLE_CONN_INTERVAL_MAX,
+                             BLE_SUPERVISION_TIMEOUT * 10);
+                }
+            }
         } else {
             ESP_LOGW(TAG, "Connection failed, restarting advertise");
-            ble_gap_adv_start(g_own_addr_type, nullptr, BLE_HS_FOREVER,
-                              nullptr, gap_event_cb, nullptr);
+            self->_advertise_with_retry();
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "Disconnected, restarting advertise");
-        g_conn_handle = 0;
-        if (g_conn_cb) g_conn_cb(false);
-        ble_gap_adv_start(g_own_addr_type, nullptr, BLE_HS_FOREVER,
-                          nullptr, gap_event_cb, nullptr);
+        self->m_conn_handle = 0;
+        if (self->m_conn_cb) self->m_conn_cb(false);
+        // 停止数据看门狗
+        self->stop_watchdog();
+        self->_advertise_with_retry();
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ESP_LOGW(TAG, "Advertising stopped, restarting");
-        ble_gap_adv_start(g_own_addr_type, nullptr, BLE_HS_FOREVER,
-                          nullptr, gap_event_cb, nullptr);
+        self->_advertise_with_retry();
         break;
     default:
         break;
@@ -107,21 +128,22 @@ static int gap_event_cb(struct ble_gap_event* event, void* arg)
     return 0;
 }
 
-// NimBLE host 同步回调
-static void on_sync(void)
+void BleServer::on_sync()
 {
+    BleServer* self = s_instance;
+    if (!self) return;
+
     ESP_LOGI(TAG, "NimBLE host synced");
-    int rc = ble_hs_id_infer_auto(0, &g_own_addr_type);
+    int rc = ble_hs_id_infer_auto(0, &self->m_own_addr_type);
     if (rc != 0) {
         ESP_LOGW(TAG, "Failed to infer address type: %d, using random", rc);
-        g_own_addr_type = BLE_OWN_ADDR_RANDOM;
+        self->m_own_addr_type = BLE_OWN_ADDR_RANDOM;
     }
-    g_ready = true;
-    ESP_LOGI(TAG, "NimBLE host ready, addr_type=%d", g_own_addr_type);
+    self->m_ready = true;
+    ESP_LOGI(TAG, "NimBLE host ready, addr_type=%d", self->m_own_addr_type);
 }
 
-// NimBLE host 任务
-static void ble_host_task(void* param)
+void BleServer::ble_host_task(void* param)
 {
     ESP_LOGI(TAG, "NimBLE host task started");
     nimble_port_run();
@@ -129,8 +151,22 @@ static void ble_host_task(void* param)
     nimble_port_freertos_deinit();
 }
 
+void BleServer::watchdog_cb(TimerHandle_t t)
+{
+    BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
+    if (!self) return;
+
+    ESP_LOGW(TAG, "Data watchdog timeout — forcing disconnect");
+    if (self->m_conn_handle != 0) {
+        ble_gap_terminate(self->m_conn_handle, 0x13);  // HCI: Remote User Terminated Connection
+    }
+}
+
+// ============ BleServer 公有方法 ============
+
 void BleServer::init()
 {
+    s_instance = this;
     ESP_LOGI(TAG, "BLE init start");
 
     // 生成设备名称: ClaudeCodeIndicator_<MAC>
@@ -156,6 +192,10 @@ void BleServer::init()
 
     ble_svc_gap_device_name_set(m_device_name);
 
+    // 绑定实例指针和成员变量（必须在 register 之前）
+    g_chr_defs[0].arg = this;
+    g_chr_defs[0].val_handle = &m_char_val_handle;
+
     // 注册 GATT service
     ESP_LOGI(TAG, "Registering GATT services...");
     ble_gatts_count_cfg(g_svc_defs);
@@ -172,22 +212,40 @@ void BleServer::start_advertise()
 {
     ESP_LOGI(TAG, "Waiting for NimBLE host ready...");
     int timeout = 200;  // 2 seconds
-    while (!g_ready && timeout-- > 0) {
+    while (!m_ready && timeout-- > 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    if (!g_ready) {
+    if (!m_ready) {
         ESP_LOGE(TAG, "NimBLE host not ready after 2s, cannot advertise");
         return;
     }
     ESP_LOGI(TAG, "Starting advertise...");
-    // 设置广播数据
+    _advertise_with_retry();
+}
+
+void BleServer::_advertise_with_retry()
+{
+    // 1. 先停止可能残留的广播，清 NimBLE 内部状态
+    int rc = ble_gap_adv_stop();
+    ESP_LOGI(TAG, "Adv stop returned: %d", rc);
+    vTaskDelay(pdMS_TO_TICKS(50));  // 让 NimBLE 处理完停止事件
+
+    // 2. 带重试启动广播
     struct ble_gap_adv_params adv_params = {};
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    int rc = ble_gap_adv_start(g_own_addr_type, nullptr, BLE_HS_FOREVER,
+
+    int retry = 50;  // 最多等 1 秒
+    while (retry-- > 0) {
+        rc = ble_gap_adv_start(m_own_addr_type, nullptr, BLE_HS_FOREVER,
                                &adv_params, gap_event_cb, nullptr);
+        if (rc == 0) break;
+        if (rc != BLE_HS_EBUSY && rc != BLE_HS_EINVAL) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
     if (rc != 0) {
-        ESP_LOGE(TAG, "ble_gap_adv_start failed: %d", rc);
+        ESP_LOGE(TAG, "Restart advertise failed: %d", rc);
     } else {
         ESP_LOGI(TAG, "Advertising started");
     }
@@ -195,25 +253,59 @@ void BleServer::start_advertise()
 
 void BleServer::set_message_callback(ble_message_cb_t cb)
 {
-    g_msg_cb = cb;
+    m_msg_cb = cb;
 }
 
 void BleServer::set_connect_callback(ble_connect_cb_t cb)
 {
-    g_conn_cb = cb;
+    m_conn_cb = cb;
 }
 
 void BleServer::send_response(const char* msg)
 {
-    if (g_conn_handle == 0) return;
-    int len = strlen(msg);
+    if (m_conn_handle == 0) return;
     char data[128];
     snprintf(data, sizeof(data), "%s\n", msg);
     struct os_mbuf* om = ble_hs_mbuf_from_flat(data, strlen(data));
-    int rc = ble_gattc_notify_custom(g_conn_handle, g_char_val_handle, om);
+    int rc = ble_gattc_notify_custom(m_conn_handle, m_char_val_handle, om);
     if (rc != 0) {
         ESP_LOGW(TAG, "Notify failed: %d", rc);
     } else {
         ESP_LOGI(TAG, "Sent: %s", msg);
+    }
+}
+
+// ============ 数据看门狗（Task 3 实现） ============
+
+void BleServer::start_watchdog()
+{
+    stop_watchdog();  // 防止重复创建
+    m_watchdog = xTimerCreate(
+        "ble_wd",
+        pdMS_TO_TICKS(BLE_WATCHDOG_TIMEOUT_MS),
+        pdFALSE,  // one-shot
+        this,     // 通过 pvTimerID 传递 this
+        watchdog_cb
+    );
+    if (m_watchdog) {
+        xTimerStart(m_watchdog, 0);
+        ESP_LOGI(TAG, "Watchdog started (%d ms)", BLE_WATCHDOG_TIMEOUT_MS);
+    }
+}
+
+void BleServer::reset_watchdog()
+{
+    if (m_watchdog) {
+        xTimerReset(m_watchdog, 0);
+    }
+}
+
+void BleServer::stop_watchdog()
+{
+    if (m_watchdog) {
+        xTimerStop(m_watchdog, 0);
+        xTimerDelete(m_watchdog, 0);
+        m_watchdog = nullptr;
+        ESP_LOGI(TAG, "Watchdog stopped");
     }
 }

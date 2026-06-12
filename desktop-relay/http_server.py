@@ -1,5 +1,7 @@
 import json
 import logging
+import subprocess
+import time
 
 from aiohttp import web
 
@@ -8,6 +10,27 @@ from config import HTTP_HOST, HTTP_PORT
 logger = logging.getLogger(__name__)
 
 VALID_MESSAGES = {"WORKING", "WAITING_USER", "COMPLETED", "ERROR"}
+
+
+def _free_port(host, port):
+    """如果有进程占用指定端口，强制终止它（Windows only）。"""
+    try:
+        result = subprocess.run(
+            ['netstat', '-ano'], capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            if f':{port}' in line and 'LISTENING' in line:
+                parts = line.split()
+                pid = int(parts[-1])
+                subprocess.run(
+                    ['taskkill', '/F', '/PID', str(pid)],
+                    capture_output=True
+                )
+                logger.info(f"Killed PID {pid} holding port {port}")
+                return True
+    except Exception as e:
+        logger.warning(f"Failed to free port {port}: {e}")
+    return False
 
 
 class HttpRelayServer:
@@ -21,7 +44,21 @@ class HttpRelayServer:
         self._runner = web.AppRunner(app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, HTTP_HOST, HTTP_PORT)
-        await site.start()
+
+        for attempt in range(2):  # 首次尝试 + 1 次清理重试
+            try:
+                await site.start()
+                break
+            except OSError:
+                if attempt == 0:
+                    logger.warning(f"Port {HTTP_PORT} in use, attempting to free...")
+                    if _free_port(HTTP_HOST, HTTP_PORT):
+                        time.sleep(0.3)
+                    # runner setup 已做，只需重建 site 重试
+                    site = web.TCPSite(self._runner, HTTP_HOST, HTTP_PORT)
+                else:
+                    raise
+
         logger.info(f"HTTP server listening on http://{HTTP_HOST}:{HTTP_PORT}")
 
     async def _handle_hook(self, request):

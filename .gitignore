@@ -3,3 +3,5 @@ build
 managed_components
 .claude
 __pycache__
+hook-notifier/hook_test.log
+ClaudeCodeIndicator.zip

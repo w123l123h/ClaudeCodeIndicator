@@ -27,8 +27,22 @@ class DesktopRelay:
         self.http = HttpRelayServer(self._on_http_message)
         self.alive_event = asyncio.Event()
         self.keepalive_failures = 0
+        self._shutting_down = False
 
         self.ble.set_message_callback(self._on_ble_message)
+
+    async def shutdown(self):
+        """优雅退出：停止 HTTP，断开 BLE"""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        logger.info("Shutdown initiated...")
+        try:
+            await self.http.stop()
+        except Exception as e:
+            logger.warning(f"HTTP stop error: {e}")
+        await self.ble.cleanup()
+        logger.info("Shutdown complete")
 
     def _on_ble_message(self, msg):
         logger.info(f"BLE notify: {msg}")
@@ -110,27 +124,30 @@ class DesktopRelay:
                 self.keepalive_failures = 0
 
     async def run(self):
-        # 先启动 HTTP，确保 hook 消息不会丢失
-        await self.http.start()
+        try:
+            # 先启动 HTTP，确保 hook 消息不会丢失
+            await self.http.start()
 
-        # 后台：BLE 扫描 + 连接（持续重试直到成功）
-        while True:
-            connected = await self.ble.scan_and_connect()
-            if connected:
-                break
-            logger.warning("No device found, retrying in 5s...")
-            await asyncio.sleep(5)
+            # 后台：BLE 扫描 + 连接（持续重试直到成功）
+            while True:
+                connected = await self.ble.scan_and_connect()
+                if connected:
+                    break
+                logger.warning("No device found, retrying in 5s...")
+                await asyncio.sleep(5)
 
-        # 配对
-        paired = await self._pairing_flow()
-        if not paired:
-            return
+            # 配对
+            paired = await self._pairing_flow()
+            if not paired:
+                return
 
-        # 并发：保活 + 重连监视
-        await asyncio.gather(
-            self._keepalive_task(),
-            self.ble.reconnect_loop(),
-        )
+            # 并发：保活 + 重连监视
+            await asyncio.gather(
+                self._keepalive_task(),
+                self.ble.reconnect_loop(),
+            )
+        finally:
+            await self.shutdown()
 
 
 if __name__ == "__main__":
@@ -138,4 +155,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(relay.run())
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        logger.info("Interrupted by user")

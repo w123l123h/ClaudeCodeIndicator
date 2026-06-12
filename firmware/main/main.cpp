@@ -164,7 +164,8 @@ static void handle_pair_success() {
     }
     g_led->all_off();
     g_battery_low = false;
-    ESP_LOGI(TAG, "Pair success — all off, state cleared");
+    g_ble->start_watchdog();  // 配对完成后启动数据看门狗
+    ESP_LOGI(TAG, "Pair success — all off, state cleared, watchdog started");
 }
 
 // BLE 消息处理 (C 回调)
@@ -201,9 +202,12 @@ static void ble_connect_callback(bool connected)
 {
     g_connected = connected;
     if (connected) {
+        g_led_states[2].blink = false;
         g_led->set_led(2, 0, 0, 0);
         if (g_power) g_power->enable();
     } else {
+        // 断连后广播会重启，恢复等待指示
+        g_led_states[2] = {nullptr, true, 0, 255, 0};
         if (g_power) g_power->disable();
     }
 }
@@ -267,6 +271,9 @@ extern "C" void app_main(void)
     g_ble->set_message_callback(handle_ble_message);
     g_ble->set_connect_callback(ble_connect_callback);
     g_ble->start_advertise();
+
+    // 等待连接：LED2 绿色闪烁
+    g_led_states[2] = {nullptr, true, 0, 255, 0};
 
     // 电池监测
     BatteryMonitor battery;

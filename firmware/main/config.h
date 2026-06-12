@@ -36,8 +36,11 @@
 #define BLE_CHAR_UUID               "0000ff01-0000-1000-8000-00805f9b34fb"
 #define BLE_CONN_INTERVAL_MIN       30   // ms
 #define BLE_CONN_INTERVAL_MAX       50   // ms
-#define BLE_SUPERVISION_TIMEOUT     400  // *10 = 4000ms
+#define BLE_SUPERVISION_TIMEOUT     400  // *10ms = 4000ms
 #define BLE_SLAVE_LATENCY           0
+
+// 数据看门狗超时 (ms)
+#define BLE_WATCHDOG_TIMEOUT_MS     20000
 
 // BLE 消息定义
 #define MSG_KEEPALIVE       "KEEPALIVE"

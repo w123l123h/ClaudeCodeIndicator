@@ -44,15 +44,21 @@ class BleClientManager:
             json.dump({'device_name': name}, f)
 
     async def scan_and_connect(self):
+        # 启动时给 BLE 适配器稳定时间
+        await asyncio.sleep(0.5)
+
         saved = self.get_saved_device()
 
         if saved:
-            # 已配对：尝试连保存的地址
+            # 已配对：先尝试直连保存的地址
             logger.info(f"Connecting to saved device: {saved}")
-            return await self._connect_and_verify(saved)
-        else:
-            # 未配对：扫描所有设备，逐个尝试
-            return await self._scan_all_and_connect()
+            if await self._connect_and_verify(saved):
+                return True
+            # 直连失败，回退到扫描
+            logger.warning("Direct connect to saved device failed, falling back to scan...")
+
+        # 扫描所有设备，逐个尝试
+        return await self._scan_all_and_connect()
 
     async def _scan_all_and_connect(self):
         logger.info("Scanning for devices...")
@@ -145,6 +151,19 @@ class BleClientManager:
         if self._client:
             await self._client.disconnect()
             self._connected = False
+
+    async def cleanup(self):
+        """优雅退出：断开 BLE 并清理所有资源"""
+        logger.info("Cleaning up BLE...")
+        try:
+            await self.disconnect()
+        except Exception as e:
+            logger.warning(f"Disconnect during cleanup failed: {e}")
+        self._client = None
+        self._char = None
+        self._connected = False
+        self._target_device = None
+        logger.info("BLE cleanup complete")
 
     async def reconnect_loop(self):
         delay = RECONNECT_BASE_DELAY
