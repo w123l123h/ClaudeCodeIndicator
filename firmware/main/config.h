@@ -17,6 +17,7 @@
 // 时序参数 (ms)
 #define SELF_TEST_DELAY_MS       500
 #define LED_BLINK_PERIOD_MS      500
+#define BLINK_TICK_MS            50   // Fast tick resolution for per-LED blink timing
 #define CC_LED_TIMEOUT_MS        600000  // 10 分钟
 #define MIN_WAITING_BLINK_MS     3000    // WAITING_USER 最短闪烁保护
 #define BATTERY_CHECK_INTERVAL_MS  5000
