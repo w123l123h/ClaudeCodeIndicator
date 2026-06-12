@@ -80,7 +80,7 @@ static void apply_led_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
         state.blink = blink;
         state.blink_ms = (blink_ms > 0) ? blink_ms : LED_BLINK_PERIOD_MS;
         state.blink_counter = 0;
-        state.blink_on = false;
+        state.blink_on = true;
         g_led->set_led(id, r, g, b);
 
         uint32_t timeout_ms = (timeout_s > 0) ? (timeout_s * 1000) : CC_LED_TIMEOUT_MS;
