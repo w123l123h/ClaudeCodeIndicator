@@ -22,6 +22,9 @@ static BleServer* g_ble = nullptr;
 struct LedState {
     TimerHandle_t timer = nullptr;
     bool blink = false;
+    uint16_t blink_ms = LED_BLINK_PERIOD_MS;
+    uint16_t blink_counter = 0;
+    bool blink_on = false;
     uint8_t r = 0, g = 0, b = 0;
 };
 static LedState g_led_states[3];
@@ -36,6 +39,8 @@ static void led_timeout_callback(TimerHandle_t t) {
             if (i == 0 && g_battery_low) return;
             g_led->set_led(i, 0, 0, 0);
             g_led_states[i].blink = false;
+            g_led_states[i].blink_counter = 0;
+            g_led_states[i].blink_on = false;
             g_led_states[i].timer = nullptr;
             ESP_LOGI(TAG, "LED%d timeout — off", i);
             return;
@@ -45,7 +50,7 @@ static void led_timeout_callback(TimerHandle_t t) {
 
 // 执行单条 LED 指令
 static void apply_led_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
-                               uint32_t timeout_s, bool blink) {
+                               uint32_t timeout_s, bool blink, uint16_t blink_ms) {
     if (id < 0 || id > 2) return;
 
     if (id == 0 && g_battery_low) {
@@ -64,6 +69,8 @@ static void apply_led_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
     if (!on) {
         g_led->set_led(id, 0, 0, 0);
         state.blink = false;
+        state.blink_counter = 0;
+        state.blink_on = false;
         state.r = state.g = state.b = 0;
         ESP_LOGI(TAG, "LED%d off", id);
     } else {
@@ -71,6 +78,9 @@ static void apply_led_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
         state.g = g;
         state.b = b;
         state.blink = blink;
+        state.blink_ms = (blink_ms > 0) ? blink_ms : LED_BLINK_PERIOD_MS;
+        state.blink_counter = 0;
+        state.blink_on = false;
         g_led->set_led(id, r, g, b);
 
         uint32_t timeout_ms = (timeout_s > 0) ? (timeout_s * 1000) : CC_LED_TIMEOUT_MS;
@@ -83,8 +93,8 @@ static void apply_led_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
         if (state.timer) {
             xTimerStart(state.timer, 0);
         }
-        ESP_LOGI(TAG, "LED%d on rgb=(%d,%d,%d) timeout=%us blink=%d",
-                 id, r, g, b, (unsigned)(timeout_ms / 1000), blink);
+        ESP_LOGI(TAG, "LED%d on rgb=(%d,%d,%d) timeout=%us blink=%d blink_ms=%u",
+                 id, r, g, b, (unsigned)(timeout_ms / 1000), blink, (unsigned)blink_ms);
     }
 }
 
@@ -131,7 +141,12 @@ static void parse_led_json(const char* json_str) {
         cJSON* j_blink = cJSON_GetObjectItem(item, "blink");
         bool blink = cJSON_IsTrue(j_blink);
 
-        apply_led_command(id, on, r, g, b, timeout_s, blink);
+        cJSON* j_blink_ms = cJSON_GetObjectItem(item, "blink_ms");
+        uint16_t blink_ms = (j_blink_ms && j_blink_ms->valueint > 0)
+                            ? (uint16_t)j_blink_ms->valueint
+                            : LED_BLINK_PERIOD_MS;
+
+        apply_led_command(id, on, r, g, b, timeout_s, blink, blink_ms);
     }
 
     cJSON_Delete(root);
@@ -203,11 +218,20 @@ static void ble_connect_callback(bool connected)
     g_connected = connected;
     if (connected) {
         g_led_states[2].blink = false;
+        g_led_states[2].blink_counter = 0;
+        g_led_states[2].blink_on = false;
         g_led->set_led(2, 0, 0, 0);
         if (g_power) g_power->enable();
     } else {
         // 断连后广播会重启，恢复等待指示
-        g_led_states[2] = {nullptr, true, 0, 255, 0};
+        g_led_states[2].timer = nullptr;
+        g_led_states[2].blink = true;
+        g_led_states[2].blink_ms = LED_BLINK_PERIOD_MS;
+        g_led_states[2].blink_counter = 0;
+        g_led_states[2].blink_on = false;
+        g_led_states[2].r = 0;
+        g_led_states[2].g = 255;
+        g_led_states[2].b = 0;
         if (g_power) g_power->disable();
     }
 }
@@ -273,7 +297,14 @@ extern "C" void app_main(void)
     g_ble->start_advertise();
 
     // 等待连接：LED2 绿色闪烁
-    g_led_states[2] = {nullptr, true, 0, 255, 0};
+    g_led_states[2].timer = nullptr;
+    g_led_states[2].blink = true;
+    g_led_states[2].blink_ms = LED_BLINK_PERIOD_MS;
+    g_led_states[2].blink_counter = 0;
+    g_led_states[2].blink_on = false;
+    g_led_states[2].r = 0;
+    g_led_states[2].g = 255;
+    g_led_states[2].b = 0;
 
     // 电池监测
     BatteryMonitor battery;
@@ -285,22 +316,25 @@ extern "C" void app_main(void)
     g_power = &power;
     power.start();
 
-    // 主循环：处理 LED 闪烁
-    bool blink_toggle = false;
-
+    // 主循环：处理 LED 闪烁（per-LED timing via fast tick + counter）
     while (true) {
-        blink_toggle = !blink_toggle;
-
         for (int i = 0; i < 3; i++) {
-            if (g_led_states[i].blink) {
-                if (blink_toggle) {
-                    g_led->set_led(i, g_led_states[i].r, g_led_states[i].g, g_led_states[i].b);
-                } else {
-                    g_led->set_led(i, 0, 0, 0);
+            if (g_battery_low && i == 0) continue;
+            LedState& s = g_led_states[i];
+            if (s.blink && s.blink_ms > 0) {
+                s.blink_counter += BLINK_TICK_MS;
+                if (s.blink_counter >= s.blink_ms) {
+                    s.blink_counter = 0;
+                    s.blink_on = !s.blink_on;
+                    if (s.blink_on) {
+                        g_led->set_led(i, s.r, s.g, s.b);
+                    } else {
+                        g_led->set_led(i, 0, 0, 0);
+                    }
                 }
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(LED_BLINK_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(BLINK_TICK_MS));
     }
 }
