@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-PYTHON_EXE = r"C:\Users\joe06\AppData\Local\Programs\Python\Python313\python.exe"
+PYTHON_EXE = sys.executable
 HTTP_PORT = 54321
 
 

@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 
-with open(r'C:\Users\joe06\.claude\settings.json', 'r') as f:
+settings_path = Path.home() / ".claude" / "settings.json"
+with open(settings_path, 'r') as f:
     data = json.load(f)
 
 WORKING_CMD = (
@@ -29,7 +31,7 @@ for entry in data['hooks'].get('Notification', []):
 # Stop - keep Python
 print('Stop: kept as-is')
 
-with open(r'C:\Users\joe06\.claude\settings.json', 'w') as f:
+with open(settings_path, 'w') as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 
 print('Done')
