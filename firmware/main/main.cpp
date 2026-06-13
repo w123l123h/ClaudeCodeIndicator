@@ -239,6 +239,17 @@ static void ble_connect_callback(bool connected)
     }
 }
 
+// 电源控制回调（由 BLE server 的 phase 定时器触发）
+static void ble_power_ctrl_callback(bool allow_sleep)
+{
+    if (!g_power) return;
+    if (allow_sleep) {
+        g_power->enable();   // release PM lock → allow light sleep
+    } else {
+        g_power->disable();  // acquire PM lock → stay awake
+    }
+}
+
 // 电池低电量回调
 static void battery_low_callback(bool low)
 {
@@ -300,6 +311,7 @@ extern "C" void app_main(void)
     g_ble->init();
     g_ble->set_message_callback(handle_ble_message);
     g_ble->set_connect_callback(ble_connect_callback);
+    g_ble->set_power_ctrl_callback(ble_power_ctrl_callback);
     g_ble->start_advertise();
 
     // 等待连接：LED2 绿色闪烁
