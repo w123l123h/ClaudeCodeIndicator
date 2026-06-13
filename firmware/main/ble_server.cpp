@@ -197,8 +197,7 @@ void BleServer::phase1_cb(TimerHandle_t t)
 
     ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (10s)");
 
-    // Ensure PM lock acquired (stay awake for advertising)
-    if (self->m_power_cb) self->m_power_cb(false);
+    // PM lock already held from disconnect — no need to re-acquire
 
     self->m_adv_phase = AdvPhase::PHASE2_AWAKE;
     self->_advertise_with_retry();
