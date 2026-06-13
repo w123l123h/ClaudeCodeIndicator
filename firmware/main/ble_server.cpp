@@ -84,8 +84,6 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
             ESP_LOGI(TAG, "Connected, handle=%d", self->m_conn_handle);
             if (self->m_conn_cb) self->m_conn_cb(true);
 
-            // 看门狗在 PAIR_SUCCESS 后才启动，避免配对期间误触发
-
             // 设置连接参数（缩短 supervision timeout 到 4s）
             {
                 struct ble_gap_upd_params params = {};
@@ -105,6 +103,10 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
                              BLE_SUPERVISION_TIMEOUT * 10);
                 }
             }
+
+            // Start watchdog immediately on connect.
+            // PAIR_CONFIRM will stop it if user needs time to confirm pairing.
+            self->start_watchdog();
         } else {
             ESP_LOGW(TAG, "Connection failed, restarting advertise");
             self->_advertise_with_retry();
