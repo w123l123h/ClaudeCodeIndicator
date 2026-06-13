@@ -184,12 +184,14 @@ void BleServer::phase1_cb(TimerHandle_t t)
     if (!self) return;
 
     // Guard: if phase was cancelled while this callback was queued, bail out
-    if (self->m_adv_phase != AdvPhase::PHASE1_CONTINUOUS) {
+    // Capture handle locally to prevent TOCTOU race with cancel_phase_timers
+    TimerHandle_t handle = self->m_phase1_timer;
+    if (self->m_adv_phase != AdvPhase::PHASE1_CONTINUOUS || !handle) {
         return;
     }
 
     // One-shot timer fired — delete it
-    xTimerDelete(self->m_phase1_timer, 0);
+    xTimerDelete(handle, 0);
     self->m_phase1_timer = nullptr;
 
     ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (10s)");
@@ -220,11 +222,12 @@ void BleServer::phase2_cb(TimerHandle_t t)
     BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
     if (!self) return;
 
-    // Guard: if timer was already cleaned up by cancel_phase_timers, bail out
-    if (!self->m_phase2_timer) return;
+    // Guard: capture handle locally to prevent TOCTOU race with cancel_phase_timers
+    TimerHandle_t handle = self->m_phase2_timer;
+    if (!handle) return;
 
     // One-shot timer fired — delete it (will be re-created for next sub-phase)
-    xTimerDelete(self->m_phase2_timer, 0);
+    xTimerDelete(handle, 0);
     self->m_phase2_timer = nullptr;
 
     if (self->m_adv_phase == AdvPhase::PHASE2_AWAKE) {
@@ -320,6 +323,12 @@ void BleServer::init()
 
 void BleServer::cancel_phase_timers()
 {
+    // Release PM lock if we're in a phase that holds it
+    if (m_adv_phase == AdvPhase::PHASE1_CONTINUOUS ||
+        m_adv_phase == AdvPhase::PHASE2_AWAKE) {
+        if (m_power_cb) m_power_cb(true);  // release PM lock
+    }
+
     if (m_phase1_timer) {
         xTimerStop(m_phase1_timer, 0);
         xTimerDelete(m_phase1_timer, 0);
