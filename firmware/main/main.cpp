@@ -11,6 +11,7 @@
 #include "battery_monitor.h"
 #include "power_manager.h"
 #include "cJSON.h"
+#include "esp_sleep.h"
 
 static const char* TAG = "main";
 
@@ -334,8 +335,13 @@ extern "C" void app_main(void)
     g_power = &power;
     power.start();
 
-    // 主循环：处理 LED 闪烁（per-LED timing via fast tick + counter）
+    // 主循环：处理 LED 闪烁 + Phase2 BLE light sleep
     while (true) {
+        // Phase2 SLEEP: suspend BLE → light sleep → resume
+        if (g_ble && g_ble->is_sleep_pending()) {
+            g_ble->enter_light_sleep();
+            continue;
+        }
         for (int i = 0; i < 3; i++) {
             LedState& s = g_led_states[i];
             if (s.blink && s.blink_ms > 0) {

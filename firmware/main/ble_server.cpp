@@ -2,6 +2,8 @@
 #include "config.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_bt.h"
+#include "esp_sleep.h"
 #include <cstring>
 
 #include "nimble/nimble_port.h"
@@ -131,9 +133,8 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
         if (self->m_adv_phase == AdvPhase::PHASE2_SLEEP) {
-            // Slow advertising stopped unexpectedly — restart it
-            ESP_LOGI(TAG, "Adv complete during SLEEP — restarting slow advertising");
-            self->_advertise_slow();
+            // BLE suspended during SLEEP — ignore stale ADV_COMPLETE
+            ESP_LOGI(TAG, "Adv complete during SLEEP phase — ignored (BLE suspended)");
         } else {
             ESP_LOGW(TAG, "Advertising stopped unexpectedly, restarting");
             self->_advertise_with_retry();
@@ -222,55 +223,23 @@ void BleServer::phase2_cb(TimerHandle_t t)
     BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
     if (!self) return;
 
-    // Guard: capture handle locally to prevent TOCTOU race with cancel_phase_timers
+    // Guard: capture handle locally to prevent TOCTOU race
     TimerHandle_t handle = self->m_phase2_timer;
     if (!handle) return;
 
-    // One-shot timer fired — delete it (will be re-created for next sub-phase)
     xTimerDelete(handle, 0);
     self->m_phase2_timer = nullptr;
 
     if (self->m_adv_phase == AdvPhase::PHASE2_AWAKE) {
-        // AWAKE → SLEEP: switch to slow advertising (2-5s interval) + release PM lock
-        // CPU can enter light sleep between advertising events via modem sleep
-        ESP_LOGI(TAG, "Adv phase 2: intermittent — SLEEP (%lu ms), slow advertising",
+        // AWAKE → SLEEP: signal main loop to suspend BLE and enter light sleep
+        ESP_LOGI(TAG, "Adv phase 2: intermittent — SLEEP (%lu ms), suspend pending",
                  (unsigned long)PHASE2_SLEEP_MS);
         self->m_adv_phase = AdvPhase::PHASE2_SLEEP;
-        self->_advertise_slow();
-        if (self->m_power_cb) self->m_power_cb(true);  // release PM lock → allow light sleep
+        self->m_sleep_pending = true;
+        if (self->m_power_cb) self->m_power_cb(true);  // release PM lock
 
-        // Schedule next awake
-        self->m_phase2_timer = xTimerCreate(
-            "adv_ph2",
-            pdMS_TO_TICKS(PHASE2_SLEEP_MS),
-            pdFALSE,
-            self,
-            phase2_cb
-        );
-        if (self->m_phase2_timer) {
-            xTimerStart(self->m_phase2_timer, 0);
-        }
-    } else if (self->m_adv_phase == AdvPhase::PHASE2_SLEEP) {
-        // SLEEP → AWAKE
-        ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (%lu ms)",
-                 (unsigned long)PHASE2_AWAKE_MS);
-        self->m_adv_phase = AdvPhase::PHASE2_AWAKE;
-        if (self->m_power_cb) self->m_power_cb(false);  // acquire PM lock → stay awake
-        self->_advertise_with_retry();
-
-        // Schedule next sleep
-        self->m_phase2_timer = xTimerCreate(
-            "adv_ph2",
-            pdMS_TO_TICKS(PHASE2_AWAKE_MS),
-            pdFALSE,
-            self,
-            phase2_cb
-        );
-        if (self->m_phase2_timer) {
-            xTimerStart(self->m_phase2_timer, 0);
-        }
+        // No timer — main loop handles SLEEP→AWAKE after light sleep
     } else {
-        // Unexpected phase (cancelled mid-cycle, or logic error)
         ESP_LOGW(TAG, "Adv phase2: unexpected phase %d, stopping cycle",
                  static_cast<int>(self->m_adv_phase));
     }
@@ -407,33 +376,63 @@ void BleServer::_advertise_with_retry()
     }
 }
 
-void BleServer::_advertise_slow()
+void BleServer::enter_light_sleep()
 {
-    // Slow advertising for PHASE2_SLEEP: 2-5s interval for power saving.
-    // Between advertising events, modem sleep + CPU light sleep reduce power.
+    m_sleep_pending = false;
+
+    ESP_LOGI(TAG, "Suspending BLE for light sleep...");
+
+    // 1. Stop advertising
     int rc = ble_gap_adv_stop();
-    ESP_LOGI(TAG, "Adv stop returned: %d (slow)", rc);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGI(TAG, "Adv stop returned: %d", rc);
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    struct ble_gap_adv_params adv_params = {};
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    adv_params.itvl_min = SLOW_ADV_ITVL_MIN;  // 2000ms in 0.625ms units
-    adv_params.itvl_max = SLOW_ADV_ITVL_MAX;  // 5000ms in 0.625ms units
-
-    int retry = 50;
-    while (retry-- > 0) {
-        rc = ble_gap_adv_start(m_own_addr_type, nullptr, BLE_HS_FOREVER,
-                               &adv_params, gap_event_cb, nullptr);
-        if (rc == 0) break;
-        if (rc != BLE_HS_EBUSY && rc != BLE_HS_EINVAL) break;
-        vTaskDelay(pdMS_TO_TICKS(20));
+    // 2. Disable BLE controller — releases btLS lock
+    rc = esp_bt_controller_disable();
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "bt_controller_disable failed: %d", rc);
+    } else {
+        ESP_LOGI(TAG, "BLE controller disabled — btLS released");
     }
 
-    if (rc != 0) {
-        ESP_LOGE(TAG, "Restart slow advertise failed: %d", rc);
+    // 3. Set RTC timer and enter light sleep
+    ESP_LOGI(TAG, "Entering light sleep for %lu ms...",
+             (unsigned long)PHASE2_SLEEP_MS);
+    esp_sleep_enable_timer_wakeup(PHASE2_SLEEP_MS * 1000);
+    esp_light_sleep_start();
+    ESP_LOGI(TAG, "Woke from light sleep");
+
+    // 4. Re-enable BLE controller
+    rc = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "bt_controller_enable failed: %d", rc);
+        return;
+    }
+    ESP_LOGI(TAG, "BLE controller re-enabled");
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    // 5. Restart AWAKE cycle
+    ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (%lu ms)",
+             (unsigned long)PHASE2_AWAKE_MS);
+
+    if (m_power_cb) m_power_cb(false);  // re-acquire PM lock
+    m_adv_phase = AdvPhase::PHASE2_AWAKE;
+
+    vTaskDelay(pdMS_TO_TICKS(500));  // let NimBLE recover
+    _advertise_with_retry();
+
+    // Start 10s AWAKE timer → phase2_cb
+    m_phase2_timer = xTimerCreate(
+        "adv_ph2",
+        pdMS_TO_TICKS(PHASE2_AWAKE_MS),
+        pdFALSE,
+        this,
+        phase2_cb
+    );
+    if (m_phase2_timer) {
+        xTimerStart(m_phase2_timer, 0);
     } else {
-        ESP_LOGI(TAG, "Slow advertising started (2-5s interval)");
+        ESP_LOGE(TAG, "Failed to create phase2 timer");
     }
 }
 

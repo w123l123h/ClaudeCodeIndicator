@@ -49,7 +49,10 @@ public:
 
     // 带重试和状态清理的广播启动
     void _advertise_with_retry();
-    void _advertise_slow();   // long-interval advertising (2-5s) for PHASE2_SLEEP
+
+    // Phase2 SLEEP: BLE suspend → light sleep → resume
+    void enter_light_sleep();  // full cycle: suspend BLE, sleep, resume
+    bool is_sleep_pending() const { return m_sleep_pending; }
 
 private:
     // 断连后广播阶段
@@ -59,14 +62,11 @@ private:
     static constexpr uint32_t PHASE2_AWAKE_MS    = 10 * 1000;       // 10s
     static constexpr uint32_t PHASE2_SLEEP_MS    = 50 * 1000;       // 50s
 
-    // Slow advertising intervals for PHASE2_SLEEP (in 0.625ms units) → 2–5 seconds
-    static constexpr uint16_t SLOW_ADV_ITVL_MIN = 3200;  // 2000ms
-    static constexpr uint16_t SLOW_ADV_ITVL_MAX = 8000;  // 5000ms
-
     AdvPhase m_adv_phase = AdvPhase::NONE;
     TimerHandle_t m_phase1_timer = nullptr;  // 30-min one-shot
-    TimerHandle_t m_phase2_timer = nullptr;  // alternating one-shot (AWAKE↔SLEEP)
+    TimerHandle_t m_phase2_timer = nullptr;  // 10s one-shot for AWAKE window
     ble_power_ctrl_cb_t m_power_cb = nullptr;
+    bool m_sleep_pending = false;  // set by phase2_cb, consumed by main loop
 
     uint16_t m_conn_handle = 0;
     uint8_t m_own_addr_type = 0;  // set in on_sync()
