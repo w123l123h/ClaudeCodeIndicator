@@ -169,6 +169,11 @@ void BleServer::phase1_cb(TimerHandle_t t)
     BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
     if (!self) return;
 
+    // Guard: if phase was cancelled while this callback was queued, bail out
+    if (self->m_adv_phase != AdvPhase::PHASE1_CONTINUOUS) {
+        return;
+    }
+
     // One-shot timer fired — delete it
     xTimerDelete(self->m_phase1_timer, 0);
     self->m_phase1_timer = nullptr;
@@ -200,6 +205,9 @@ void BleServer::phase2_cb(TimerHandle_t t)
 {
     BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
     if (!self) return;
+
+    // Guard: if timer was already cleaned up by cancel_phase_timers, bail out
+    if (!self->m_phase2_timer) return;
 
     // One-shot timer fired — delete it (will be re-created for next sub-phase)
     xTimerDelete(self->m_phase2_timer, 0);
@@ -243,6 +251,10 @@ void BleServer::phase2_cb(TimerHandle_t t)
         if (self->m_phase2_timer) {
             xTimerStart(self->m_phase2_timer, 0);
         }
+    } else {
+        // Unexpected phase (cancelled mid-cycle, or logic error)
+        ESP_LOGW(TAG, "Adv phase2: unexpected phase %d, stopping cycle",
+                 static_cast<int>(self->m_adv_phase));
     }
 }
 
@@ -309,6 +321,8 @@ void BleServer::cancel_phase_timers()
 
 void BleServer::start_phase1()
 {
+    cancel_phase_timers();  // safety: clean any existing phase state first
+
     ESP_LOGI(TAG, "Adv phase 1: continuous advertising (30 min)");
     m_adv_phase = AdvPhase::PHASE1_CONTINUOUS;
 
