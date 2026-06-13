@@ -155,6 +155,9 @@ static void parse_led_json(const char* json_str) {
 
 // 配对处理
 static void handle_pair_confirm() {
+    // Pause watchdog — user needs time to confirm pairing dialog on PC
+    g_ble->stop_watchdog();
+
     for (int i = 0; i < 3; i++) {
         if (g_led_states[i].timer) {
             xTimerStop(g_led_states[i].timer, 0);
@@ -164,7 +167,7 @@ static void handle_pair_confirm() {
         g_led_states[i].blink = false;
     }
     g_led->all_on({0, 255, 0});
-    ESP_LOGI(TAG, "Pair confirm — all LEDs green");
+    ESP_LOGI(TAG, "Pair confirm — all LEDs green, watchdog paused");
 }
 
 static void handle_pair_success() {
