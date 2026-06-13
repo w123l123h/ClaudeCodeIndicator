@@ -49,14 +49,19 @@ public:
 
     // 带重试和状态清理的广播启动
     void _advertise_with_retry();
+    void _advertise_slow();   // long-interval advertising (2-5s) for PHASE2_SLEEP
 
 private:
     // 断连后广播阶段
     enum class AdvPhase { NONE, PHASE1_CONTINUOUS, PHASE2_AWAKE, PHASE2_SLEEP };
 
-    static constexpr uint32_t PHASE1_DURATION_MS = 30 * 60 * 1000;  // 30 min
+    static constexpr uint32_t PHASE1_DURATION_MS = 30 * 1000;       // 30s for testing (TODO: restore to 30*60*1000)
     static constexpr uint32_t PHASE2_AWAKE_MS    = 10 * 1000;       // 10s
     static constexpr uint32_t PHASE2_SLEEP_MS    = 50 * 1000;       // 50s
+
+    // Slow advertising intervals for PHASE2_SLEEP (in 0.625ms units) → 2–5 seconds
+    static constexpr uint16_t SLOW_ADV_ITVL_MIN = 3200;  // 2000ms
+    static constexpr uint16_t SLOW_ADV_ITVL_MAX = 8000;  // 5000ms
 
     AdvPhase m_adv_phase = AdvPhase::NONE;
     TimerHandle_t m_phase1_timer = nullptr;  // 30-min one-shot

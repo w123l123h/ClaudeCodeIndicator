@@ -62,10 +62,15 @@ void PowerManager::start()
 
 void PowerManager::enable()
 {
-    if (!m_pm_lock) return;
+    if (!m_pm_lock) {
+        ESP_LOGW(TAG, "PM enable: no lock handle (init failed?)");
+        return;
+    }
     esp_err_t ret = esp_pm_lock_release(m_pm_lock);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "PM lock released — light sleep enabled (BLE connected)");
+        ESP_LOGI(TAG, "Dumping PM locks after release:");
+        esp_pm_dump_locks(stdout);
     } else {
         ESP_LOGW(TAG, "PM lock release failed: %s", esp_err_to_name(ret));
     }

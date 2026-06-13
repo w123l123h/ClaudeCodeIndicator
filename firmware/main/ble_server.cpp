@@ -131,8 +131,9 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
         if (self->m_adv_phase == AdvPhase::PHASE2_SLEEP) {
-            // Expected — we called ble_gap_adv_stop() intentionally
-            ESP_LOGI(TAG, "Adv complete during SLEEP phase — not restarting");
+            // Slow advertising stopped unexpectedly — restart it
+            ESP_LOGI(TAG, "Adv complete during SLEEP — restarting slow advertising");
+            self->_advertise_slow();
         } else {
             ESP_LOGW(TAG, "Advertising stopped unexpectedly, restarting");
             self->_advertise_with_retry();
@@ -231,11 +232,12 @@ void BleServer::phase2_cb(TimerHandle_t t)
     self->m_phase2_timer = nullptr;
 
     if (self->m_adv_phase == AdvPhase::PHASE2_AWAKE) {
-        // AWAKE → SLEEP
-        ESP_LOGI(TAG, "Adv phase 2: intermittent — SLEEP (%lu ms), adv stopped",
+        // AWAKE → SLEEP: switch to slow advertising (2-5s interval) + release PM lock
+        // CPU can enter light sleep between advertising events via modem sleep
+        ESP_LOGI(TAG, "Adv phase 2: intermittent — SLEEP (%lu ms), slow advertising",
                  (unsigned long)PHASE2_SLEEP_MS);
         self->m_adv_phase = AdvPhase::PHASE2_SLEEP;
-        ble_gap_adv_stop();
+        self->_advertise_slow();
         if (self->m_power_cb) self->m_power_cb(true);  // release PM lock → allow light sleep
 
         // Schedule next awake
@@ -403,6 +405,36 @@ void BleServer::_advertise_with_retry()
         ESP_LOGE(TAG, "Restart advertise failed: %d", rc);
     } else {
         ESP_LOGI(TAG, "Advertising started");
+    }
+}
+
+void BleServer::_advertise_slow()
+{
+    // Slow advertising for PHASE2_SLEEP: 2-5s interval for power saving.
+    // Between advertising events, modem sleep + CPU light sleep reduce power.
+    int rc = ble_gap_adv_stop();
+    ESP_LOGI(TAG, "Adv stop returned: %d (slow)", rc);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    struct ble_gap_adv_params adv_params = {};
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    adv_params.itvl_min = SLOW_ADV_ITVL_MIN;  // 2000ms in 0.625ms units
+    adv_params.itvl_max = SLOW_ADV_ITVL_MAX;  // 5000ms in 0.625ms units
+
+    int retry = 50;
+    while (retry-- > 0) {
+        rc = ble_gap_adv_start(m_own_addr_type, nullptr, BLE_HS_FOREVER,
+                               &adv_params, gap_event_cb, nullptr);
+        if (rc == 0) break;
+        if (rc != BLE_HS_EBUSY && rc != BLE_HS_EINVAL) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    if (rc != 0) {
+        ESP_LOGE(TAG, "Restart slow advertise failed: %d", rc);
+    } else {
+        ESP_LOGI(TAG, "Slow advertising started (2-5s interval)");
     }
 }
 
