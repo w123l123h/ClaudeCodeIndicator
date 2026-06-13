@@ -5,6 +5,20 @@
 
 static const char* TAG = "power";
 
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+static esp_err_t on_sleep_enter(int64_t sleep_time_us, void* arg)
+{
+    ESP_LOGI(TAG, "💤 Light sleep enter (expected %lld us)", sleep_time_us);
+    return ESP_OK;
+}
+
+static esp_err_t on_sleep_exit(int64_t sleep_time_us, void* arg)
+{
+    ESP_LOGI(TAG, "⏰ Light sleep exit (slept %lld us)", sleep_time_us);
+    return ESP_OK;
+}
+#endif
+
 void PowerManager::start()
 {
     // Configure ESP-IDF PM framework for light sleep
@@ -30,6 +44,20 @@ void PowerManager::start()
     // Acquire immediately: no BLE connection yet, stay awake for advertising
     esp_pm_lock_acquire(m_pm_lock);
     ESP_LOGI(TAG, "PM started: light sleep blocked (no BLE connection)");
+
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    // Register sleep callbacks for observability
+    esp_pm_sleep_cbs_register_config_t cbs = {
+        .enter_cb = on_sleep_enter,
+        .exit_cb = on_sleep_exit,
+    };
+    ret = esp_pm_light_sleep_register_cbs(&cbs);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register sleep callbacks: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Sleep callbacks registered");
+    }
+#endif
 }
 
 void PowerManager::enable()
