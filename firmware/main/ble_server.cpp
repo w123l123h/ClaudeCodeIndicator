@@ -164,6 +164,88 @@ void BleServer::watchdog_cb(TimerHandle_t t)
     }
 }
 
+void BleServer::phase1_cb(TimerHandle_t t)
+{
+    BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
+    if (!self) return;
+
+    // One-shot timer fired — delete it
+    xTimerDelete(self->m_phase1_timer, 0);
+    self->m_phase1_timer = nullptr;
+
+    ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (10s)");
+
+    // Ensure PM lock acquired (stay awake for advertising)
+    if (self->m_power_cb) self->m_power_cb(false);
+
+    self->m_adv_phase = AdvPhase::PHASE2_AWAKE;
+    self->_advertise_with_retry();
+
+    // Start 10s awake timer
+    self->m_phase2_timer = xTimerCreate(
+        "adv_ph2",
+        pdMS_TO_TICKS(PHASE2_AWAKE_MS),
+        pdFALSE,
+        self,
+        phase2_cb
+    );
+    if (self->m_phase2_timer) {
+        xTimerStart(self->m_phase2_timer, 0);
+    } else {
+        ESP_LOGE(TAG, "Failed to create phase2 timer");
+    }
+}
+
+void BleServer::phase2_cb(TimerHandle_t t)
+{
+    BleServer* self = static_cast<BleServer*>(pvTimerGetTimerID(t));
+    if (!self) return;
+
+    // One-shot timer fired — delete it (will be re-created for next sub-phase)
+    xTimerDelete(self->m_phase2_timer, 0);
+    self->m_phase2_timer = nullptr;
+
+    if (self->m_adv_phase == AdvPhase::PHASE2_AWAKE) {
+        // AWAKE → SLEEP
+        ESP_LOGI(TAG, "Adv phase 2: intermittent — SLEEP (%lu ms), adv stopped",
+                 (unsigned long)PHASE2_SLEEP_MS);
+        self->m_adv_phase = AdvPhase::PHASE2_SLEEP;
+        ble_gap_adv_stop();
+        if (self->m_power_cb) self->m_power_cb(true);  // release PM lock → allow light sleep
+
+        // Schedule next awake
+        self->m_phase2_timer = xTimerCreate(
+            "adv_ph2",
+            pdMS_TO_TICKS(PHASE2_SLEEP_MS),
+            pdFALSE,
+            self,
+            phase2_cb
+        );
+        if (self->m_phase2_timer) {
+            xTimerStart(self->m_phase2_timer, 0);
+        }
+    } else if (self->m_adv_phase == AdvPhase::PHASE2_SLEEP) {
+        // SLEEP → AWAKE
+        ESP_LOGI(TAG, "Adv phase 2: intermittent — AWAKE (%lu ms)",
+                 (unsigned long)PHASE2_AWAKE_MS);
+        self->m_adv_phase = AdvPhase::PHASE2_AWAKE;
+        if (self->m_power_cb) self->m_power_cb(false);  // acquire PM lock → stay awake
+        self->_advertise_with_retry();
+
+        // Schedule next sleep
+        self->m_phase2_timer = xTimerCreate(
+            "adv_ph2",
+            pdMS_TO_TICKS(PHASE2_AWAKE_MS),
+            pdFALSE,
+            self,
+            phase2_cb
+        );
+        if (self->m_phase2_timer) {
+            xTimerStart(self->m_phase2_timer, 0);
+        }
+    }
+}
+
 // ============ BleServer 公有方法 ============
 
 void BleServer::init()
@@ -208,6 +290,40 @@ void BleServer::init()
     ESP_LOGI(TAG, "Starting NimBLE host task...");
     nimble_port_freertos_init(ble_host_task);
     ESP_LOGI(TAG, "BLE init complete");
+}
+
+void BleServer::cancel_phase_timers()
+{
+    if (m_phase1_timer) {
+        xTimerStop(m_phase1_timer, 0);
+        xTimerDelete(m_phase1_timer, 0);
+        m_phase1_timer = nullptr;
+    }
+    if (m_phase2_timer) {
+        xTimerStop(m_phase2_timer, 0);
+        xTimerDelete(m_phase2_timer, 0);
+        m_phase2_timer = nullptr;
+    }
+    m_adv_phase = AdvPhase::NONE;
+}
+
+void BleServer::start_phase1()
+{
+    ESP_LOGI(TAG, "Adv phase 1: continuous advertising (30 min)");
+    m_adv_phase = AdvPhase::PHASE1_CONTINUOUS;
+
+    m_phase1_timer = xTimerCreate(
+        "adv_ph1",
+        pdMS_TO_TICKS(PHASE1_DURATION_MS),
+        pdFALSE,  // one-shot
+        this,     // pvTimerID → retrieved by phase1_cb
+        phase1_cb
+    );
+    if (m_phase1_timer) {
+        xTimerStart(m_phase1_timer, 0);
+    } else {
+        ESP_LOGE(TAG, "Failed to create phase1 timer");
+    }
 }
 
 void BleServer::start_advertise()
@@ -261,6 +377,11 @@ void BleServer::set_message_callback(ble_message_cb_t cb)
 void BleServer::set_connect_callback(ble_connect_cb_t cb)
 {
     m_conn_cb = cb;
+}
+
+void BleServer::set_power_ctrl_callback(ble_power_ctrl_cb_t cb)
+{
+    m_power_cb = cb;
 }
 
 void BleServer::send_response(const char* msg)
