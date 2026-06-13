@@ -35,8 +35,8 @@
 #define BLE_DEVICE_NAME_PREFIX      "ClaudeCodeIndicator"
 #define BLE_SERVICE_UUID            "0000ff00-0000-1000-8000-00805f9b34fb"
 #define BLE_CHAR_UUID               "0000ff01-0000-1000-8000-00805f9b34fb"
-#define BLE_CONN_INTERVAL_MIN       30   // ms
-#define BLE_CONN_INTERVAL_MAX       50   // ms
+#define BLE_CONN_INTERVAL_MIN       100   // ms
+#define BLE_CONN_INTERVAL_MAX       100   // ms
 #define BLE_SUPERVISION_TIMEOUT     400  // *10ms = 4000ms
 #define BLE_SLAVE_LATENCY           0
 
