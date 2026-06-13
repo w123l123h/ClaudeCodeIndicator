@@ -251,6 +251,26 @@ static void ble_power_ctrl_callback(bool allow_sleep)
     }
 }
 
+// BLE 休眠回调: 休眠前关 LED，唤醒后恢复
+static void ble_sleep_callback(bool entering)
+{
+    if (entering) {
+        // Turn off all LEDs before light sleep
+        if (g_led) {
+            g_led->all_off();
+        }
+        for (int i = 0; i < 3; i++) {
+            if (g_led_states[i].timer) {
+                xTimerStop(g_led_states[i].timer, 0);
+            }
+            g_led_states[i].blink = false;
+            g_led_states[i].blink_counter = 0;
+        }
+        ESP_LOGI(TAG, "LEDs off for light sleep");
+    }
+    // On wake, LEDs will resume via main loop blink logic
+}
+
 // 电池低电量回调
 static void battery_low_callback(bool low)
 {
@@ -313,6 +333,7 @@ extern "C" void app_main(void)
     g_ble->set_message_callback(handle_ble_message);
     g_ble->set_connect_callback(ble_connect_callback);
     g_ble->set_power_ctrl_callback(ble_power_ctrl_callback);
+    g_ble->set_sleep_callback(ble_sleep_callback);
     g_ble->start_advertise();
 
     // 等待连接：LED2 绿色闪烁

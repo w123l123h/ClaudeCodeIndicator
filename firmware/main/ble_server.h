@@ -12,6 +12,8 @@ extern "C" {
 typedef void (*ble_message_cb_t)(const char* msg);
 // 连接状态回调: void on_connect_change(bool connected)
 typedef void (*ble_connect_cb_t)(bool connected);
+// 休眠回调: void on_sleep(bool entering) — entering=true 即将休眠, false 已唤醒
+typedef void (*ble_sleep_cb_t)(bool entering);
 // 电源控制回调: void on_power_ctrl(bool allow_sleep)
 // allow_sleep=true  → release PM lock → CPU can enter light sleep
 // allow_sleep=false → acquire PM lock → stay awake for advertising
@@ -30,6 +32,7 @@ public:
     void set_message_callback(ble_message_cb_t cb);
     void set_connect_callback(ble_connect_cb_t cb);
     void set_power_ctrl_callback(ble_power_ctrl_cb_t cb);
+    void set_sleep_callback(ble_sleep_cb_t cb);
     void send_response(const char* msg);
 
     // 数据看门狗
@@ -66,6 +69,7 @@ private:
     TimerHandle_t m_phase1_timer = nullptr;  // 30-min one-shot
     TimerHandle_t m_phase2_timer = nullptr;  // 10s one-shot for AWAKE window
     ble_power_ctrl_cb_t m_power_cb = nullptr;
+    ble_sleep_cb_t m_sleep_cb = nullptr;
     bool m_sleep_pending = false;  // set by phase2_cb, consumed by main loop
 
     uint16_t m_conn_handle = 0;

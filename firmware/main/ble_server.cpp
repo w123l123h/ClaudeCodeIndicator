@@ -398,8 +398,16 @@ void BleServer::enter_light_sleep()
     // 3. Set RTC timer and enter light sleep
     ESP_LOGI(TAG, "Entering light sleep for %lu ms...",
              (unsigned long)PHASE2_SLEEP_MS);
+
+    // Notify main loop: turn off LEDs before sleep
+    if (m_sleep_cb) m_sleep_cb(true);
+
     esp_sleep_enable_timer_wakeup(PHASE2_SLEEP_MS * 1000);
     esp_light_sleep_start();
+
+    // Notify main loop: wake up, restore state
+    if (m_sleep_cb) m_sleep_cb(false);
+
     ESP_LOGI(TAG, "Woke from light sleep");
 
     // 4. Re-enable BLE controller
@@ -449,6 +457,11 @@ void BleServer::set_connect_callback(ble_connect_cb_t cb)
 void BleServer::set_power_ctrl_callback(ble_power_ctrl_cb_t cb)
 {
     m_power_cb = cb;
+}
+
+void BleServer::set_sleep_callback(ble_sleep_cb_t cb)
+{
+    m_sleep_cb = cb;
 }
 
 void BleServer::send_response(const char* msg)
