@@ -61,7 +61,7 @@ private:
     // 断连后广播阶段
     enum class AdvPhase { NONE, PHASE1_CONTINUOUS, PHASE2_AWAKE, PHASE2_SLEEP };
 
-    static constexpr uint32_t PHASE1_DURATION_MS = 30 * 1000;       // 30s for testing (TODO: restore to 30*60*1000)
+    static constexpr uint32_t PHASE1_DURATION_MS = 30 * 60 * 1000;  // 30 min
     static constexpr uint32_t PHASE2_AWAKE_MS    = 10 * 1000;       // 10s
     static constexpr uint32_t PHASE2_SLEEP_MS    = 50 * 1000;       // 50s
 
