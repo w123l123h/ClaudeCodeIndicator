@@ -80,6 +80,11 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
+            bool was_in_phase = (self->m_adv_phase != AdvPhase::NONE);
+            self->cancel_phase_timers();  // cancel phase1/phase2 timers
+            if (was_in_phase) {
+                ESP_LOGI(TAG, "Adv phase timers cancelled (reconnected)");
+            }
             self->m_conn_handle = event->connect.conn_handle;
             ESP_LOGI(TAG, "Connected, handle=%d", self->m_conn_handle);
             if (self->m_conn_cb) self->m_conn_cb(true);
@@ -109,20 +114,29 @@ int BleServer::gap_event_cb(struct ble_gap_event* event, void* arg)
             self->start_watchdog();
         } else {
             ESP_LOGW(TAG, "Connection failed, restarting advertise");
-            self->_advertise_with_retry();
+            if (self->m_adv_phase != AdvPhase::PHASE2_SLEEP) {
+                self->_advertise_with_retry();
+            }
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "Disconnected, restarting advertise");
         self->m_conn_handle = 0;
+        self->cancel_phase_timers();  // safety: clean any leftover phase state
         if (self->m_conn_cb) self->m_conn_cb(false);
         // 停止数据看门狗
         self->stop_watchdog();
         self->_advertise_with_retry();
+        self->start_phase1();  // start 30-min phase1 timer
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        ESP_LOGW(TAG, "Advertising stopped, restarting");
-        self->_advertise_with_retry();
+        if (self->m_adv_phase == AdvPhase::PHASE2_SLEEP) {
+            // Expected — we called ble_gap_adv_stop() intentionally
+            ESP_LOGI(TAG, "Adv complete during SLEEP phase — not restarting");
+        } else {
+            ESP_LOGW(TAG, "Advertising stopped unexpectedly, restarting");
+            self->_advertise_with_retry();
+        }
         break;
     default:
         break;
