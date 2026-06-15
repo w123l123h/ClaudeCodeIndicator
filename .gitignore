@@ -5,3 +5,4 @@ managed_components
 __pycache__
 hook-notifier/hook_test.log
 ClaudeCodeIndicator.zip
+device.json

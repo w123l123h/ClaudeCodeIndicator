@@ -33,6 +33,8 @@ static bool g_battery_low = false;
 static bool g_connected = false;
 static PowerManager* g_power = nullptr;
 
+static bool g_in_pair = false;
+
 // 单个 LED 超时回调
 static void led_timeout_callback(TimerHandle_t t) {
     for (int i = 0; i < 3; i++) {
@@ -168,6 +170,7 @@ static void handle_pair_confirm() {
         g_led_states[i].blink = false;
     }
     g_led->all_on({0, 255, 0});
+    g_in_pair = true;
     ESP_LOGI(TAG, "Pair confirm — all LEDs green, watchdog paused");
 }
 
@@ -184,6 +187,7 @@ static void handle_pair_success() {
     g_led->all_off();
     g_battery_low = false;
     g_ble->start_watchdog();  // 配对完成后启动数据看门狗
+    g_in_pair = false;
     ESP_LOGI(TAG, "Pair success — all off, state cleared, watchdog started");
 }
 
@@ -237,6 +241,11 @@ static void ble_connect_callback(bool connected)
         g_led_states[2].g = 255;
         g_led_states[2].b = 0;
         if (g_power) g_power->disable();
+        if(g_in_pair)
+        {
+            g_led->set_led(0, 0, 0, 0);
+            g_led->set_led(1, 0, 0, 0);
+        }
     }
 }
 
