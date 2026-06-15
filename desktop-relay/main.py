@@ -8,7 +8,7 @@ os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import (
     KEEPALIVE_INTERVAL, KEEPALIVE_RESPONSE_TIMEOUT, KEEPALIVE_MAX_FAILURES,
-    EVENT_LED_MAP,
+    EVENT_LED_MAP, SAVED_RETRY_INTERVAL, SCAN_RETRY_INTERVAL,
 )
 from ble_client import BleClientManager
 from http_server import HttpRelayServer
@@ -67,7 +67,7 @@ class DesktopRelay:
             # 如果不在 EVENT_LED_MAP 中，直接透传（用于未来扩展）
             await self.ble.send(msg)
 
-    async def _pairing_flow(self):
+    async def _pairing_flow(self, address):
         """首次配对流程"""
         saved = self.ble.get_saved_device()
         if saved:
@@ -81,13 +81,13 @@ class DesktopRelay:
         # 弹出对话框
         loop = asyncio.get_event_loop()
         confirmed = await loop.run_in_executor(
-            None, show_pairing_dialog, self.ble.address
+            None, show_pairing_dialog, address
         )
 
         if confirmed:
-            self.ble.save_device(self.ble.address)
+            self.ble.save_device(address)
             await self.ble.send("PAIR_SUCCESS")
-            logger.info(f"Pairing successful, saved: {self.ble.address}")
+            logger.info(f"Pairing successful, saved: {address}")
             return True
         else:
             await self.ble.disconnect()
@@ -128,20 +128,50 @@ class DesktopRelay:
             # 先启动 HTTP，确保 hook 消息不会丢失
             await self.http.start()
 
-            # 后台：BLE 扫描 + 连接（持续重试直到成功）
-            while True:
-                connected = await self.ble.scan_and_connect()
-                if connected:
-                    break
-                logger.warning("No device found, retrying in 5s...")
-                await asyncio.sleep(5)
+            saved = self.ble.get_saved_device()
 
-            # 配对
-            paired = await self._pairing_flow()
-            if not paired:
-                return
+            if saved:
+                # 阶段1: 已保存设备，只直连不扫描
+                logger.info(f"Saved device: {saved}, connecting...")
+                while True:
+                    if await self.ble.connect_and_verify(saved):
+                        break
+                    logger.warning(
+                        f"Failed to connect saved device, "
+                        f"retrying in {SAVED_RETRY_INTERVAL}s..."
+                    )
+                    await asyncio.sleep(SAVED_RETRY_INTERVAL)
+            else:
+                # 阶段2: 无已保存设备，扫描+逐个尝试配对
+                paired = False
+                while not paired:
+                    devices = await self.ble.scan_devices()
+                    if not devices:
+                        logger.warning(
+                            f"No devices found, "
+                            f"retrying in {SCAN_RETRY_INTERVAL}s..."
+                        )
+                        await asyncio.sleep(SCAN_RETRY_INTERVAL)
+                        continue
 
-            # 并发：保活 + 重连监视
+                    for address, name, rssi in devices:
+                        logger.info(
+                            f"Trying: {address} (RSSI={rssi}, name={name})"
+                        )
+                        if not await self.ble.connect_and_verify(address):
+                            continue
+                        if await self._pairing_flow(address):
+                            paired = True
+                            break
+
+                    if not paired:
+                        logger.warning(
+                            f"All devices exhausted, "
+                            f"rescanning in {SCAN_RETRY_INTERVAL}s..."
+                        )
+                        await asyncio.sleep(SCAN_RETRY_INTERVAL)
+
+            # 阶段3: 保活 + 重连
             await asyncio.gather(
                 self._keepalive_task(),
                 self.ble.reconnect_loop(),
