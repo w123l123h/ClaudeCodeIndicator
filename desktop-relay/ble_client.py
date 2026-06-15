@@ -59,44 +59,6 @@ class BleClientManager:
         dev_list.sort(key=lambda x: x[2], reverse=True)
         return dev_list
 
-    async def scan_and_connect(self):
-        # 启动时给 BLE 适配器稳定时间
-        await asyncio.sleep(0.5)
-
-        saved = self.get_saved_device()
-
-        if saved:
-            # 已配对：先尝试直连保存的地址
-            logger.info(f"Connecting to saved device: {saved}")
-            if await self.connect_and_verify(saved):
-                return True
-            # 直连失败，回退到扫描
-            logger.warning("Direct connect to saved device failed, falling back to scan...")
-
-        # 扫描所有设备，逐个尝试
-        return await self._scan_all_and_connect()
-
-    async def _scan_all_and_connect(self):
-        logger.info("Scanning for devices...")
-        discovered = await BleakScanner.discover(timeout=BLE_SCAN_TIMEOUT, return_adv=True)
-
-        # 打印所有扫描到的设备，按信号强度排序
-        dev_list = []
-        for addr, (device, adv) in discovered.items():
-            name = adv.local_name or "(no name)"
-            rssi = adv.rssi
-            dev_list.append((rssi, name, addr))
-            logger.info(f"  Found: {addr}  RSSI={rssi if rssi else '?':>4}  name={name}")
-
-        # 按 RSSI 从强到弱排序
-        dev_list.sort(key=lambda x: x[0] if x[0] is not None else -999, reverse=True)
-
-        for rssi, name, address in dev_list:
-            logger.info(f"Trying: {address} (RSSI={rssi}, name={name})")
-            if await self.connect_and_verify(address):
-                return True
-        return False
-
     async def connect_and_verify(self, address):
         """连接并检查是否有目标 Service"""
         # 清理旧连接
@@ -182,21 +144,24 @@ class BleClientManager:
         logger.info("BLE cleanup complete")
 
     async def reconnect_loop(self):
-        delay = RECONNECT_BASE_DELAY
         while True:
             try:
                 if not self.is_connected:
-                    logger.info(f"Reconnecting in {delay}s...")
-                    await asyncio.sleep(delay)
-                    success = await self.scan_and_connect()
+                    saved = self.get_saved_device()
+                    if not saved:
+                        logger.warning("No saved device, skipping reconnect")
+                        await asyncio.sleep(5)
+                        continue
+
+                    logger.info(f"Reconnecting to saved device: {saved}")
+                    success = await self.connect_and_verify(saved)
                     if success:
-                        delay = RECONNECT_BASE_DELAY
+                        logger.info("Reconnected successfully")
                     else:
-                        delay = min(delay * RECONNECT_BACKOFF_MULTIPLIER, RECONNECT_MAX_DELAY)
+                        logger.warning(f"Reconnect failed, retrying in {RECONNECT_BASE_DELAY}s...")
+                        await asyncio.sleep(RECONNECT_BASE_DELAY)
                 else:
                     await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Reconnect loop error: {e}")
-                await asyncio.sleep(1)
-            else:
                 await asyncio.sleep(1)
