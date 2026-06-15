@@ -49,3 +49,8 @@ EVENT_LED_MAP = {
         ]
     },
 }
+
+# 已保存设备直连重试间隔（秒）
+SAVED_RETRY_INTERVAL = 3
+# 扫描全部失败后重试间隔（秒）
+SCAN_RETRY_INTERVAL = 5
