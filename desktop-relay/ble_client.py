@@ -5,7 +5,7 @@ from bleak import BleakScanner, BleakClient
 from config import (
     BLE_SERVICE_UUID, BLE_CHAR_UUID, BLE_SCAN_TIMEOUT,
     DEVICE_CONFIG_FILE,
-    RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY, RECONNECT_BACKOFF_MULTIPLIER,
+    RECONNECT_BASE_DELAY,
 )
 
 logger = logging.getLogger(__name__)
