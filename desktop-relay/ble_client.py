@@ -43,6 +43,22 @@ class BleClientManager:
         with open(DEVICE_CONFIG_FILE, 'w') as f:
             json.dump({'device_name': name}, f)
 
+    async def scan_devices(self):
+        """扫描 BLE 设备，返回按 RSSI 降序的列表 [(addr, name, rssi), ...]"""
+        logger.info("Scanning for devices...")
+        discovered = await BleakScanner.discover(timeout=BLE_SCAN_TIMEOUT, return_adv=True)
+
+        dev_list = []
+        for addr, (device, adv) in discovered.items():
+            name = adv.local_name or "(no name)"
+            rssi = adv.rssi
+            dev_list.append((addr, name, rssi if rssi is not None else -999))
+            logger.info(f"  Found: {addr}  RSSI={rssi if rssi else '?':>4}  name={name}")
+
+        # 按 RSSI 从强到弱排序
+        dev_list.sort(key=lambda x: x[2], reverse=True)
+        return dev_list
+
     async def scan_and_connect(self):
         # 启动时给 BLE 适配器稳定时间
         await asyncio.sleep(0.5)
@@ -52,7 +68,7 @@ class BleClientManager:
         if saved:
             # 已配对：先尝试直连保存的地址
             logger.info(f"Connecting to saved device: {saved}")
-            if await self._connect_and_verify(saved):
+            if await self.connect_and_verify(saved):
                 return True
             # 直连失败，回退到扫描
             logger.warning("Direct connect to saved device failed, falling back to scan...")
@@ -77,11 +93,11 @@ class BleClientManager:
 
         for rssi, name, address in dev_list:
             logger.info(f"Trying: {address} (RSSI={rssi}, name={name})")
-            if await self._connect_and_verify(address):
+            if await self.connect_and_verify(address):
                 return True
         return False
 
-    async def _connect_and_verify(self, address):
+    async def connect_and_verify(self, address):
         """连接并检查是否有目标 Service"""
         # 清理旧连接
         if self._client:
