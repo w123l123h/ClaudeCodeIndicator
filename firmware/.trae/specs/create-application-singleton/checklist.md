@@ -1,0 +1,16 @@
+- [x] Application 类头文件定义完整，包含单例模式和所有成员变量
+- [x] Application 类实现单例模式，instance() 返回唯一实例
+- [x] Application 类包含 LedController、LedStateManager、BleServer、BatteryMonitor、PowerManager 成员变量
+- [x] init() 方法正确初始化 NVS、LED、BLE、电池监测、电源管理
+- [x] init() 方法正确执行 LED 自检序列
+- [x] run() 方法正确启动 BLE 广播并进入主循环
+- [x] BLE 消息回调正确处理 JSON 指令、保活、配对消息
+- [x] BLE 连接回调正确更新 LED 状态和电源管理
+- [x] 电源控制回调正确管理 PM lock
+- [x] 休眠回调正确准备 LED 状态
+- [x] 电池低电量回调正确设置 LED0 状态
+- [x] JSON 解析逻辑正确解析 LED 指令
+- [x] main.cpp 仅包含 Application::instance().run() 调用
+- [x] main.cpp 移除所有全局变量和静态函数
+- [x] CMakeLists.txt 正确添加 application.cpp
+- [x] 代码无诊断错误

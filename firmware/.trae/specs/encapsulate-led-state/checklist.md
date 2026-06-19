@@ -1,0 +1,14 @@
+- [x] LedStateManager 类头文件定义完整，包含所有必要的方法声明
+- [x] LedStateManager 类实现所有声明的公共方法
+- [x] LedState 结构体作为私有成员正确封装
+- [x] LED 指令执行逻辑正确处理 on/off、颜色、超时和闪烁
+- [x] 定时器回调正确关闭 LED 并重置状态
+- [x] 闪烁逻辑在 tick() 方法中正确实现
+- [x] 配对处理方法正确管理所有 LED 状态
+- [x] 休眠准备方法正确关闭所有 LED 并暂停定时器
+- [x] 连接状态处理方法正确更新 LED2 状态
+- [x] 低电量处理方法正确管理 LED0 状态
+- [x] main.cpp 中移除所有 LedState 相关的全局变量和静态函数
+- [x] main.cpp 正确创建和使用 LedStateManager 实例
+- [x] CMakeLists.txt 正确添加新的源文件
+- [x] 项目编译成功，无错误和警告
