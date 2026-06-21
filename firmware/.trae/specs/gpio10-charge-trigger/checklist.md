@@ -1,0 +1,8 @@
+- [x] config.h 添加 CHARGE_DETECT_GPIO 定义为 GPIO_NUM_10
+- [x] application.h 添加 GPIO 初始化和中断处理声明
+- [x] application.cpp 实现 gpio_config 配置 GPIO10 为输入模式
+- [x] application.cpp 实现 gpio_install_isr_service 安装中断服务
+- [x] application.cpp 实现 gpio_isr_handler_add 添加中断处理回调
+- [x] 中断回调函数中打印"充电中"日志信息
+- [x] Application::init() 中调用 GPIO 初始化
+- [x] 代码无诊断错误

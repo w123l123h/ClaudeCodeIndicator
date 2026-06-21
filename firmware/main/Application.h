@@ -34,6 +34,17 @@ private:
     BatteryMonitor battery_monitor_;
     PowerManager power_manager_;
 
+    // GPIO 充电检测相关
+    void init_charge_detect();
+    static void IRAM_ATTR charge_detect_isr_handler(void* arg);
+    void check_charge_status();
+    
+    static volatile bool s_charge_detected;
+    static volatile bool s_last_charge_state;
+    static bool s_current_state_stable;  // 稳定后的状态
+    static uint32_t s_last_change_time;
+    static constexpr uint32_t DEBOUNCE_MS = 500;  // 增加防抖时间到500ms
+
     // 私有回调方法
     void handle_ble_message(const char* msg);
     void handle_ble_connect(bool connected);

@@ -6,13 +6,14 @@
 #include "led_controller.h"
 #include "config.h"
 
-class LedStateManager {
+class LedStateManager
+{
 public:
     LedStateManager();
     ~LedStateManager();
 
     // 初始化
-    void init(LedController* led);
+    void init(LedController *led);
 
     // LED 指令执行
     void apply_command(int id, bool on, uint8_t r, uint8_t g, uint8_t b,
@@ -24,6 +25,7 @@ public:
     // 状态设置
     void set_battery_low(bool low);
     void set_connected(bool connected);
+    void set_charge_detected(bool detected);
 
     // 配对处理
     void handle_pair_confirm();
@@ -34,25 +36,30 @@ public:
 
     // 状态查询
     bool is_blinking(int id) const;
-    void get_color(int id, uint8_t& r, uint8_t& g, uint8_t& b) const;
+    void get_color(int id, uint8_t &r, uint8_t &g, uint8_t &b) const;
+    
+    // 设置 LED 超时时间（秒）
+    void set_timeout(int id, uint32_t timeout_s);
 
 private:
-    // LED 状态结构体
-    struct LedState {
-        TimerHandle_t timer;
-        bool blink;
-        uint16_t blink_ms;
-        uint16_t blink_counter;
-        bool blink_on;
-        uint8_t r, g, b;
+    // LED 状态结构体，管理单个 LED 的状态
+    struct LedState
+    {
+        TimerHandle_t timer;       // 定时器句柄，用于超时自动关闭
+        bool blink;                // 是否处于闪烁模式
+        uint16_t blink_ms;         // 闪烁周期（毫秒）
+        uint16_t blink_counter;    // 闪烁计数器，用于控制闪烁时序
+        bool blink_on;             // 当前闪烁状态（亮/灭）
+        uint8_t r, g, b;           // LED 当前颜色值（RGB 0-255）
 
+        // 默认构造函数，初始化所有成员为默认值
         LedState() : timer(nullptr), blink(false), blink_ms(LED_BLINK_PERIOD_MS),
                      blink_counter(0), blink_on(false), r(0), g(0), b(0) {}
     };
 
     static constexpr int LED_COUNT = 3;
 
-    LedController* led_;
+    LedController *led_;
     LedState states_[LED_COUNT];
     bool battery_low_;
     bool in_pair_;

@@ -6,6 +6,7 @@
 // 硬件引脚
 #define LED_GPIO            GPIO_NUM_3
 #define BATTERY_ADC_CHANNEL ADC_CHANNEL_0  // GPIO0
+#define CHARGE_DETECT_GPIO  GPIO_NUM_1    // GPIO1 充电检测
 #define WS2812_LED_COUNT    3
 
 // LED 颜色预设 (RGB)

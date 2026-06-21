@@ -57,6 +57,12 @@ class BleClientManager:
 
         # 按 RSSI 从强到弱排序
         dev_list.sort(key=lambda x: x[2], reverse=True)
+
+        # 按name排序
+        for d in dev_list:
+            if d[1] == "ClaudeCodeIndicator":
+                dev_list.remove(d)
+                dev_list.insert(0, d)
         return dev_list
 
     async def connect_and_verify(self, address):
