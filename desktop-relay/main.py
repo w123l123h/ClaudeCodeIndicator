@@ -142,33 +142,36 @@ class DesktopRelay:
                     )
                     await asyncio.sleep(SAVED_RETRY_INTERVAL)
             else:
-                # 阶段2: 无已保存设备，扫描+逐个尝试配对
+                # 阶段2: 无已保存设备，扫描+实时尝试配对
                 paired = False
                 while not paired:
                     try:
-                        devices = await self.ble.scan_devices()
-                        if not devices:
-                            logger.warning(
-                                f"No devices found, "
-                                f"retrying in {SCAN_RETRY_INTERVAL}s..."
-                            )
-                            await asyncio.sleep(SCAN_RETRY_INTERVAL)
-                            continue
+                        paired_event = asyncio.Event()
+                        paired_address = None
 
-                        for address, name, rssi in devices:
+                        async def _on_device_found(address, name, rssi):
+                            nonlocal paired_address
+                            if paired_event.is_set():
+                                return
+                            
                             logger.info(
                                 f"Trying: {address} (RSSI={rssi}, name={name})"
                             )
                             if not await self.ble.connect_and_verify(address):
-                                continue
+                                return
                             if await self._pairing_flow(address):
-                                paired = True
-                                break
+                                paired_address = address
+                                paired_event.set()
+                                self.ble.stop_scan()
 
-                        if not paired:
+                        await self.ble.scan_devices(detection_callback=_on_device_found)
+
+                        if paired_event.is_set():
+                            paired = True
+                        else:
                             logger.warning(
-                                f"All devices exhausted, "
-                                f"rescanning in {SCAN_RETRY_INTERVAL}s..."
+                                f"No devices found or paired, "
+                                f"retrying in {SCAN_RETRY_INTERVAL}s..."
                             )
                             await asyncio.sleep(SCAN_RETRY_INTERVAL)
                     except Exception as e:

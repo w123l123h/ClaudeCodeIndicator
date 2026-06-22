@@ -18,6 +18,9 @@ class BleClientManager:
         self._connected = False
         self._message_callback = None
         self._target_device = None
+        self._scanner = None
+        self._scan_stop_event = None
+        self._discovered_devices = set()
 
     def set_message_callback(self, cb):
         self._message_callback = cb
@@ -43,27 +46,61 @@ class BleClientManager:
         with open(DEVICE_CONFIG_FILE, 'w') as f:
             json.dump({'device_name': name}, f)
 
-    async def scan_devices(self):
-        """扫描 BLE 设备，返回按 RSSI 降序的列表 [(addr, name, rssi), ...]"""
+    async def scan_devices(self, detection_callback=None):
+        """扫描 BLE 设备，返回按 RSSI 降序的列表 [(addr, name, rssi), ...]
+        
+        Args:
+            detection_callback: 可选回调函数，当发现设备时立即调用，参数为 (addr, name, rssi)
+        """
         logger.info("Scanning for devices...")
-        discovered = await BleakScanner.discover(timeout=BLE_SCAN_TIMEOUT, return_adv=True)
+        self._discovered_devices = set()
+        self._scan_stop_event = asyncio.Event()
+        
+        def _on_detected(device, adv):
+            if self._scan_stop_event.is_set():
+                return
+            
+            addr = device.address
+            if addr in self._discovered_devices:
+                return
+            self._discovered_devices.add(addr)
+            
+            name = adv.local_name or "(no name)"
+            rssi = adv.rssi if adv.rssi is not None else -999
+            logger.info(f"  Found: {addr}  RSSI={rssi:>4}  name={name}")
+            
+            if detection_callback:
+                asyncio.create_task(detection_callback(addr, name, rssi))
+
+        scanner = BleakScanner(detection_callback=_on_detected, return_adv=True)
+        
+        try:
+            await scanner.start()
+            await asyncio.wait_for(self._scan_stop_event.wait(), timeout=BLE_SCAN_TIMEOUT)
+        except asyncio.TimeoutError:
+            pass
+        finally:
+            await scanner.stop()
 
         dev_list = []
-        for addr, (device, adv) in discovered.items():
+        for addr, (device, adv) in scanner.discovered_devices.items():
             name = adv.local_name or "(no name)"
-            rssi = adv.rssi
-            dev_list.append((addr, name, rssi if rssi is not None else -999))
-            logger.info(f"  Found: {addr}  RSSI={rssi if rssi else '?':>4}  name={name}")
+            rssi = adv.rssi if adv.rssi is not None else -999
+            dev_list.append((addr, name, rssi))
 
-        # 按 RSSI 从强到弱排序
         dev_list.sort(key=lambda x: x[2], reverse=True)
 
-        # 按name排序
         for d in dev_list:
             if d[1] == "ClaudeCodeIndicator":
                 dev_list.remove(d)
                 dev_list.insert(0, d)
         return dev_list
+
+    def stop_scan(self):
+        """停止正在进行的扫描"""
+        if self._scan_stop_event:
+            self._scan_stop_event.set()
+            logger.info("Scan stopped")
 
     async def connect_and_verify(self, address):
         """连接并检查是否有目标 Service"""
