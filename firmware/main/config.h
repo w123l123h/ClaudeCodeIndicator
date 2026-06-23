@@ -12,7 +12,11 @@
 // LED 颜色预设 (RGB)
 #define LED_COLOR_RED       {255, 0, 0}
 #define LED_COLOR_ORANGE    {255, 128, 0}
+#define LED_COLOR_YELLOW    {255, 255, 0}
 #define LED_COLOR_GREEN     {0, 255, 0}
+#define LED_COLOR_CYAN      {0, 255, 255}
+#define LED_COLOR_BLUE      {0, 0, 255}
+#define LED_COLOR_PURPLE    {128, 0, 255}
 #define LED_COLOR_OFF       {0, 0, 0}
 
 // 时序参数 (ms)

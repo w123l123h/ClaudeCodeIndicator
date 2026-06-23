@@ -131,6 +131,7 @@ void Application::handle_ble_message(const char *msg)
     {
         led_state_manager_.handle_pair_success();
         ble_server_.start_watchdog();
+        play_rainbow_effect();  // 配对成功后播放7彩灯
         return;
     }
 
@@ -329,4 +330,38 @@ void Application::check_charge_status()
             s_last_charge_state = current_state;
         }
     }
+}
+
+void Application::play_rainbow_effect()
+{
+    // 7种颜色：红、橙、黄、绿、青、蓝、紫
+    const LedColor rainbow_colors[] = {
+        {255, 0, 0},     // 红
+        {255, 128, 0},   // 橙
+        {255, 255, 0},   // 黄
+        {0, 255, 0},     // 绿
+        {0, 255, 255},   // 青
+        {0, 0, 255},     // 蓝
+        {128, 0, 255}    // 紫
+    };
+    
+    // 总共执行3秒，每200ms切换一次，共15次
+    const int total_cycles = 3000 / 200;
+    
+    for (int i = 0; i < total_cycles; i++) {
+        // 关闭所有灯
+        led_controller_.all_off();
+        
+        // 计算当前颜色索引和灯号
+        int color_idx = i % 7;      // 循环7种颜色
+        int led_idx = i % WS2812_LED_COUNT;  // 循环3个LED
+        
+        // 设置当前灯的颜色
+        led_controller_.set_led(led_idx, rainbow_colors[color_idx]);
+        
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    
+    // 3秒结束后关闭所有灯
+    led_controller_.all_off();
 }

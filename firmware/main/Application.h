@@ -51,6 +51,7 @@ private:
     void handle_power_ctrl(bool allow_sleep);
     void handle_sleep(bool entering);
     void handle_battery_low(bool low);
+    void play_rainbow_effect();  // 播放7彩灯效果
 
     // JSON 解析
     void parse_led_json(const char* json_str);

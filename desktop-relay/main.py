@@ -255,6 +255,12 @@ class DesktopRelay:
                 logger.info(f"Saved device: {saved}, connecting...")
                 while True:
                     if await self.ble.connect_and_verify(saved):
+                        # 连接成功后发送成功消息
+                        try:
+                            await self.ble.send("PAIR_SUCCESS")
+                            logger.info("Sent PAIR_SUCCESS to saved device")
+                        except Exception as send_error:
+                            logger.warning(f"Failed to send PAIR_SUCCESS: {send_error}")
                         break
                     logger.warning(
                         f"Failed to connect saved device, "
@@ -337,6 +343,8 @@ class DesktopRelay:
                                             paired_address = address
                                             paired_event.set()
                                             self._clear_queue()
+                                            # 配对成功后停止扫描
+                                            self.ble.stop_scan()
                                             logger.info(f"Pairing completed successfully with {address}")
                                         else:
                                             logger.info(f"Pairing flow returned False for {address}")

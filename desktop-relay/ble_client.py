@@ -211,11 +211,16 @@ class BleClientManager:
                     success = await self.connect_and_verify(saved)
                     if success:
                         logger.info("Reconnected successfully")
+                        # 发送成功消息，通知设备连接成功
+                        try:
+                            await self.send("PAIR_SUCCESS")
+                            logger.info("Sent PAIR_SUCCESS to reconnected device")
+                        except Exception as send_error:
+                            logger.warning(f"Failed to send PAIR_SUCCESS: {send_error}")
+                            # 消息发送失败不影响重连状态
                     else:
                         logger.warning(f"Reconnect failed, retrying in {RECONNECT_BASE_DELAY}s...")
                         await asyncio.sleep(RECONNECT_BASE_DELAY)
-                else:
-                    await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Reconnect loop error: {e}")
                 await asyncio.sleep(1)
