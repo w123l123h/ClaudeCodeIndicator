@@ -392,26 +392,28 @@ void BleServer::_advertise_with_retry()
     // 1. 先停止可能残留的广播，清 NimBLE 内部状态
     int rc = ble_gap_adv_stop();
     ESP_LOGI(TAG, "Adv stop returned: %d", rc);
-    vTaskDelay(pdMS_TO_TICKS(50)); // 让 NimBLE 处理完停止事件
+    vTaskDelay(pdMS_TO_TICKS(100)); // 增加等待时间，确保状态清理完成
 
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
 
-    // 广播标志：一般发现模式
+    // 广播标志：一般发现模式 + 不支持经典蓝牙
     fields.flags = BLE_HS_ADV_F_DISC_GEN |
                    BLE_HS_ADV_F_BREDR_UNSUP;
     fields.name = (uint8_t *)"ClaudeCodeIndicator";
     fields.name_len = strlen("ClaudeCodeIndicator");
-    fields.name_is_complete = 1; // 表示这是完整名称  
+    fields.name_is_complete = 1; // 表示这是完整名称
     rc = ble_gap_adv_set_fields(&fields);
     assert(rc == 0);
 
-    // 2. 带重试启动广播
+    // 2. 带重试启动广播 - 增加重试次数
     struct ble_gap_adv_params adv_params = {};
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    // adv_params.itvl_min = 0x20; // 40ms 最小广播间隔 (0x20 * 0.625ms = 20ms, 但实际是 0x20 * 1.25ms = 40ms for adv)
+    // adv_params.itvl_max = 0x40; // 80ms 最大广播间隔
 
-    int retry = 50; // 最多等 1 秒
+    int retry = 100; // 最多等 2 秒
     while (retry-- > 0)
     {
         rc = ble_gap_adv_start(m_own_addr_type, nullptr, BLE_HS_FOREVER,

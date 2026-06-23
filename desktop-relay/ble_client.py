@@ -72,7 +72,8 @@ class BleClientManager:
             if detection_callback:
                 asyncio.create_task(detection_callback(addr, name, rssi))
 
-        scanner = BleakScanner(detection_callback=_on_detected, return_adv=True)
+        self._scanner = BleakScanner(detection_callback=_on_detected, return_adv=True)
+        scanner = self._scanner
         
         try:
             await scanner.start()

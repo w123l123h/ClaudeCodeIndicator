@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import os
+import threading
 
 # 确保工作目录为项目根 (desktop-relay 的父目录)
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,6 +34,13 @@ class DesktopRelay:
         self._pairing_in_progress = False
         self._pairing_address: str | None = None
         self._pairing_lock = asyncio.Lock()
+
+        # 配对队列
+        self._pairing_queue = []
+        self._queue_lock = threading.Lock()
+        
+        # 已配对失败过的设备（用于去重）
+        self._failed_devices = set()
 
         self.ble.set_message_callback(self._on_ble_message)
 
@@ -70,6 +78,44 @@ class DesktopRelay:
             self._pairing_in_progress = False
             self._pairing_address = None
 
+    async def _enqueue_device(self, address: str, name: str, rssi: int) -> None:
+        """将设备添加到配对队列，包含去重检查"""
+        # 检查是否已在队列中
+        with self._queue_lock:
+            for device in self._pairing_queue:
+                if device['address'] == address:
+                    logger.debug(f"Device {address} already in queue, skipping")
+                    return
+            self._pairing_queue.append({
+                'address': address,
+                'name': name,
+                'rssi': rssi
+            })
+            queue_size = len(self._pairing_queue)
+        logger.info(f"Device enqueued: {address} (RSSI={rssi}, name={name}), queue size: {queue_size}")
+
+    def _dequeue_device(self) -> dict | None:
+        """从队列取出下一个设备，返回设备信息字典，如果队列为空返回 None"""
+        with self._queue_lock:
+            if not self._pairing_queue:
+                return None
+            device = self._pairing_queue.pop(0)
+        logger.info(f"Device dequeued: {device['address']}, remaining: {len(self._pairing_queue)}")
+        return device
+
+    def _clear_queue(self) -> None:
+        """清空配对队列"""
+        with self._queue_lock:
+            count = len(self._pairing_queue)
+            self._pairing_queue.clear()
+        if count > 0:
+            logger.info(f"Queue cleared, removed {count} devices")
+
+    def _get_queue_size(self) -> int:
+        """获取队列大小"""
+        with self._queue_lock:
+            return len(self._pairing_queue)
+
     def _on_ble_message(self, msg):
         logger.info(f"BLE notify: {msg}")
         if msg == "ALIVE":
@@ -93,27 +139,27 @@ class DesktopRelay:
             # 如果不在 EVENT_LED_MAP 中，直接透传（用于未来扩展）
             await self.ble.send(msg)
 
-    async def _pairing_flow(self, address):
+    async def _pairing_flow(self, address, name):
         """首次配对流程（调用者需确保已调用 _start_pairing）"""
         saved = self.ble.get_saved_device()
         if saved:
             logger.info(f"Already paired with: {saved}")
             return True
 
-        logger.info(f"Starting pairing flow with {address}")
+        logger.info(f"Starting pairing flow with {address}, {name}")
         
         try:
             # 步骤1: 发送 PAIR_CONFIRM
-            logger.debug(f"Sending PAIR_CONFIRM to {address}")
+            logger.debug(f"Sending PAIR_CONFIRM to {address}, {name}")
             await self.ble.send("PAIR_CONFIRM")
             await asyncio.sleep(0.5)
 
             # 步骤2: 弹出用户确认对话框
-            logger.debug(f"Showing pairing dialog for {address}")
+            logger.debug(f"Showing pairing dialog for {address}, {name}")
             loop = asyncio.get_event_loop()
             try:
                 confirmed = await loop.run_in_executor(
-                    None, show_pairing_dialog, address
+                    None, show_pairing_dialog, address, name
                 )
             except Exception as dialog_error:
                 logger.error(f"Pairing dialog error: {dialog_error}", exc_info=True)
@@ -226,64 +272,124 @@ class DesktopRelay:
                         async def _on_device_found(address, name, rssi):
                             nonlocal paired_address
                             
+                            # 标准化地址（大写）用于比较
+                            address = address.upper()
+                            
                             # 如果已经配对成功，跳过所有后续设备
                             if paired_event.is_set():
                                 logger.debug(f"Skipping {address}: already paired")
                                 return
                             
-                            # 检查配对状态，如果已有设备在配对中，跳过当前设备
+                            # 检查设备是否正在配对中
+                            async with self._pairing_lock:
+                                if self._pairing_address and self._pairing_address.upper() == address:
+                                    logger.debug(f"Skipping {address}: device is being paired")
+                                    return
+                            
+                            # 检查设备是否已配对失败过
+                            if address in self._failed_devices:
+                                logger.debug(f"Skipping {address}: device has been paired and failed before")
+                                return
+                            
+                            # 将设备添加到配对队列（包含去重检查）
+                            await self._enqueue_device(address, name, rssi)
+                            
+                            # 如果没有设备在配对中，从队列取出设备开始配对
+                            if self._pairing_in_progress:
+                                logger.debug(
+                                    f"Pairing in progress, {address} enqueued, "
+                                    f"queue size: {self._get_queue_size()}"
+                                )
+                                return
+                            
+                            # 从队列取出设备开始配对
+                            device = self._dequeue_device()
+                            if device is None:
+                                logger.debug("Queue empty after dequeue, no device to pair")
+                                return
+                            
+                            address = device['address']
+                            name = device['name']
+                            
+                            # 设置配对状态
                             if not await self._start_pairing(address):
                                 logger.info(
                                     f"Skipping {address}: pairing already in progress"
                                 )
                                 return
                             
-                            # 开始配对时，立即停止扫描
+                            # 开始配对时，停止扫描
                             self.ble.stop_scan()
                             
-                            logger.info(
-                                f"Trying: {address} (RSSI={rssi}, name={name})"
-                            )
+                            logger.info(f"Starting pairing attempt 1 with {address}")
                             
-                            success = False
-                            try:
-                                # 尝试连接和验证设备
-                                logger.debug(f"Connecting to {address}...")
-                                if await self.ble.connect_and_verify(address):
-                                    logger.debug(f"Connected to {address}, starting pairing flow")
-                                    if await self._pairing_flow(address):
-                                        success = True
-                                        paired_address = address
-                                        paired_event.set()
-                                        logger.info(f"Pairing completed successfully with {address}")
-                                    else:
-                                        logger.info(f"Pairing flow returned False for {address}")
-                                else:
-                                    logger.warning(f"Failed to connect/verify {address}")
-                                    
-                            except asyncio.TimeoutError as e:
-                                logger.error(f"Timeout during pairing with {address}: {e}", exc_info=True)
-                            except ConnectionError as e:
-                                logger.error(f"Connection error during pairing with {address}: {e}", exc_info=True)
-                            except Exception as e:
-                                logger.error(f"Unexpected error during pairing with {address}: {e}", exc_info=True)
-                            finally:
-                                # 配对流程结束，清除状态
-                                logger.debug(f"Cleaning up pairing state for {address}")
-                                await self._end_pairing()
-                            
-                            # 如果配对失败，断开连接并重新启动扫描
-                            if not success:
-                                logger.info(f"Pairing failed with {address}, cleaning up...")
+                            # 配对循环：失败后继续处理队列中的下一个设备
+                            attempt = 1
+                            while True:
+                                success = False
                                 try:
-                                    if self.ble.is_connected:
-                                        await self.ble.disconnect()
-                                        logger.debug(f"Disconnected from {address} after failed pairing")
-                                except Exception as disconnect_error:
-                                    logger.warning(f"Disconnect error after failed pairing: {disconnect_error}")
+                                    # 尝试连接和验证设备
+                                    logger.debug(f"Connecting to {address}, {name}...")
+                                    if await self.ble.connect_and_verify(address):
+                                        logger.debug(f"Connected to {address}, {name}, starting pairing flow")
+                                        if await self._pairing_flow(address, name):
+                                            success = True
+                                            paired_address = address
+                                            paired_event.set()
+                                            self._clear_queue()
+                                            logger.info(f"Pairing completed successfully with {address}")
+                                        else:
+                                            logger.info(f"Pairing flow returned False for {address}")
+                                    else:
+                                        logger.warning(f"Failed to connect/verify {address}")
+                                        
+                                except asyncio.TimeoutError as e:
+                                    logger.error(f"Timeout during pairing with {address}: {e}", exc_info=True)
+                                except ConnectionError as e:
+                                    logger.error(f"Connection error during pairing with {address}: {e}", exc_info=True)
+                                except Exception as e:
+                                    logger.error(f"Unexpected error during pairing with {address}: {e}", exc_info=True)
+                                finally:
+                                    # 配对流程结束，清除状态
+                                    logger.debug(f"Cleaning up pairing state for {address}")
+                                    await self._end_pairing()
+                                    # 断开连接
+                                    try:
+                                        if self.ble.is_connected:
+                                            await self.ble.disconnect()
+                                            logger.debug(f"Disconnected from {address}")
+                                    except Exception as disconnect_error:
+                                        logger.warning(f"Disconnect error: {disconnect_error}")
                                 
-                                logger.info(f"Restarting scan for new devices...")
-                                # 注意：扫描会在外层循环中重新启动
+                                if success:
+                                    break
+                                
+                                # 配对失败，记录设备到失败列表
+                                self._failed_devices.add(address)
+                                logger.info(f"Pairing failed with {address}, checking queue...")
+                                
+                                # 配对失败，检查队列是否有下一个设备
+                                device = self._dequeue_device()
+                                if device is None:
+                                    logger.info("Queue empty after pairing failure, will restart scan")
+                                    break
+                                
+                                attempt += 1
+                                logger.info(f"Continuing with next device from queue")
+                                
+                                address = device['address']
+                                name = device['name']
+                                rssi = device['rssi']
+                                
+                                # 设置新设备的配对状态
+                                if not await self._start_pairing(address):
+                                    logger.info(f"Skipping {address}: pairing already in progress")
+                                    continue
+                                
+                                logger.info(
+                                    f"Retrying with next device: {address} "
+                                    f"(RSSI={rssi}, name={name})"
+                                )
 
                         await self.ble.scan_devices(detection_callback=_on_device_found)
 
@@ -294,6 +400,9 @@ class DesktopRelay:
                                 f"No devices found or paired, "
                                 f"retrying in {SCAN_RETRY_INTERVAL}s..."
                             )
+                            # 清空队列和失败设备列表，重新开始
+                            self._clear_queue()
+                            self._failed_devices.clear()
                             await asyncio.sleep(SCAN_RETRY_INTERVAL)
                     except Exception as e:
                         logger.error(
