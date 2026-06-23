@@ -80,7 +80,7 @@ void Application::run()
     ble_server_.start_advertise();
 
     // 等待连接：LED2 绿色闪烁
-    led_state_manager_.apply_command(2, true, 0, 255, 0, 0, true, LED_BLINK_PERIOD_MS);
+    led_state_manager_.apply_command(2, true, led_color_advertising.r, led_color_advertising.g, led_color_advertising.b, 0, true, LED_BLINK_PERIOD_MS);
 
     // 启动电池监测
     battery_monitor_.start();
@@ -336,13 +336,13 @@ void Application::play_rainbow_effect()
 {
     // 7种颜色：红、橙、黄、绿、青、蓝、紫
     const LedColor rainbow_colors[] = {
-        {255, 0, 0},     // 红
-        {255, 128, 0},   // 橙
-        {255, 255, 0},   // 黄
-        {0, 255, 0},     // 绿
-        {0, 255, 255},   // 青
-        {0, 0, 255},     // 蓝
-        {128, 0, 255}    // 紫
+        LED_COLOR_RED,     // 红
+        LED_COLOR_ORANGE,   // 橙
+        LED_COLOR_YELLOW,   // 黄
+        LED_COLOR_GREEN,     // 绿
+        LED_COLOR_CYAN,   // 青
+        LED_COLOR_BLUE,     // 蓝
+        LED_COLOR_PURPLE    // 紫
     };
     
     // 总共执行3秒，每200ms切换一次，共15次

@@ -3,10 +3,6 @@
 #include <stdint.h>
 #include "config.h"
 
-struct LedColor {
-    uint8_t r, g, b;
-};
-
 class LedController {
 public:
     void init();

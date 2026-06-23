@@ -100,7 +100,7 @@ void LedStateManager::tick()
                 }
                 else
                 {
-                    led_->set_led(i, 0, 0, 0);
+                    led_->set_led(i, led_color_off);
                 }
             }
         }
@@ -118,9 +118,9 @@ void LedStateManager::set_battery_low(bool low)
             xTimerDelete(states_[0].timer, 0);
             states_[0].timer = nullptr;
         }
-        states_[0].r = 255;
-        states_[0].g = 0;
-        states_[0].b = 0;
+        states_[0].r = led_color_battery_low.r;
+        states_[0].g = led_color_battery_low.g;
+        states_[0].b = led_color_battery_low.b;
         states_[0].blink = true;
         states_[0].blink_ms = LED_BLINK_PERIOD_MS;
         states_[0].blink_counter = 0;
@@ -132,7 +132,7 @@ void LedStateManager::set_battery_low(bool low)
         states_[0].blink = false;
         if (states_[0].timer == nullptr)
         {
-            led_->set_led(0, 0, 0, 0);
+            led_->set_led(0, led_color_off);
             states_[0].r = states_[0].g = states_[0].b = 0;
         }
         ESP_LOGI(TAG, "Battery OK (> 3.5V) — LED0 released");
@@ -146,7 +146,7 @@ void LedStateManager::set_connected(bool connected)
         states_[2].blink = false;
         states_[2].blink_counter = 0;
         states_[2].blink_on = false;
-        led_->set_led(2, 0, 0, 0);
+        led_->set_led(2, led_color_off);
     }
     else
     {
@@ -156,13 +156,13 @@ void LedStateManager::set_connected(bool connected)
         states_[2].blink_ms = LED_BLINK_PERIOD_MS;
         states_[2].blink_counter = 0;
         states_[2].blink_on = false;
-        states_[2].r = 0;
-        states_[2].g = 255;
-        states_[2].b = 0;
+        states_[2].r = led_color_advertising.r;
+        states_[2].g = led_color_advertising.g;
+        states_[2].b = led_color_advertising.b;
         if (in_pair_)
         {
-            led_->set_led(0, 0, 0, 0);
-            led_->set_led(1, 0, 0, 0);
+            led_->set_led(0, led_color_off);
+            led_->set_led(1, led_color_off);
         }
     }
 }
@@ -199,7 +199,7 @@ void LedStateManager::handle_pair_confirm()
         stop_and_delete_timer(i);
         states_[i].blink = false;
     }
-    led_->all_on({0, 255, 0});
+    led_->all_on(led_color_pair_confirm);
     in_pair_ = true;
     ESP_LOGI(TAG, "Pair confirm — all LEDs green");
 }
@@ -301,7 +301,7 @@ void LedStateManager::timer_callback(TimerHandle_t timer)
     {
         if (id == 0 && g_led_state_manager->battery_low_)
             return;
-        g_led_state_manager->led_->set_led(id, 0, 0, 0);
+        g_led_state_manager->led_->set_led(id, led_color_off);
         g_led_state_manager->states_[id].blink = false;
         g_led_state_manager->states_[id].blink_counter = 0;
         g_led_state_manager->states_[id].blink_on = false;
@@ -322,5 +322,5 @@ void LedStateManager::stop_and_delete_timer(int id)
 
 void LedStateManager::turn_off_led(int id)
 {
-    led_->set_led(id, 0, 0, 0);
+    led_->set_led(id, led_color_off);
 }

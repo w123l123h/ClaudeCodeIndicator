@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include "hal/gpio_types.h"
 #include "hal/adc_types.h"
 
@@ -10,14 +11,25 @@
 #define WS2812_LED_COUNT    3
 
 // LED 颜色预设 (RGB)
-#define LED_COLOR_RED       {50, 0, 0}
-#define LED_COLOR_ORANGE    {50, 25, 0}
-#define LED_COLOR_YELLOW    {50, 25, 0}
-#define LED_COLOR_GREEN     {0, 25, 0}
-#define LED_COLOR_CYAN      {0, 25, 25}
-#define LED_COLOR_BLUE      {0, 0, 25}
-#define LED_COLOR_PURPLE    {10, 0, 25}
+#define LED_COLOR_RED       {20, 0, 0}
+#define LED_COLOR_ORANGE    {20, 10, 0}
+#define LED_COLOR_YELLOW    {20, 10, 0}
+#define LED_COLOR_GREEN     {0, 20, 0}
+#define LED_COLOR_CYAN      {0, 20, 20}
+#define LED_COLOR_BLUE      {0, 0, 20}
+#define LED_COLOR_PURPLE    {10, 0, 20}
 #define LED_COLOR_OFF       {0, 0, 0}
+
+// RGB 颜色结构体
+struct LedColor {
+    uint8_t r, g, b;
+};
+
+// LED 状态颜色变量 — 定义在 config.cpp，可在运行时修改
+extern LedColor led_color_advertising;
+extern LedColor led_color_battery_low;
+extern LedColor led_color_pair_confirm;
+extern LedColor led_color_off;
 
 // 时序参数 (ms)
 #define SELF_TEST_DELAY_MS       500

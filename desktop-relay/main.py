@@ -331,9 +331,11 @@ class DesktopRelay:
                                 )
                                 return
                             
-                            # 开始配对时，停止扫描
-                            self.ble.stop_scan()
-                            
+                            # 注意：不要在这里 stop_scan()！
+                            # 否则 scan_devices() 会提前返回，paired_event 还未设置，
+                            # 外层代码会误认为配对失败并启动新一轮扫描。
+                            # stop_scan() 只在配对成功后调用（见下方 success 分支）。
+
                             logger.info(f"Starting pairing attempt 1 with {address}")
                             
                             # 配对循环：失败后继续处理队列中的下一个设备
