@@ -221,6 +221,9 @@ class BleClientManager:
                     else:
                         logger.warning(f"Reconnect failed, retrying in {RECONNECT_BASE_DELAY}s...")
                         await asyncio.sleep(RECONNECT_BASE_DELAY)
+                else:
+                    # 已连接时让出事件循环，避免忙循环饿死 keepalive 等任务
+                    await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Reconnect loop error: {e}")
                 await asyncio.sleep(1)

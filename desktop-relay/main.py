@@ -215,21 +215,25 @@ class DesktopRelay:
             return False
 
     async def _keepalive_task(self):
+        logger.info("Keepalive task started")
         while True:
-            await asyncio.sleep(KEEPALIVE_INTERVAL)
             if not self.ble.is_connected:
+                logger.info("Keepalive skipped: not connected")
+                await asyncio.sleep(KEEPALIVE_INTERVAL)
                 continue
 
             try:
+                logger.info("Sending KEEPALIVE heartbeat")
                 self.alive_event.clear()
                 await self.ble.send("KEEPALIVE")
+                logger.info("KEEPALIVE heartbeat sent successfully")
 
                 await asyncio.wait_for(
                     self.alive_event.wait(),
                     timeout=KEEPALIVE_RESPONSE_TIMEOUT
                 )
                 self.keepalive_failures = 0
-                logger.debug("Keepalive OK")
+                logger.info("Keepalive OK - response received")
             except asyncio.TimeoutError:
                 self.keepalive_failures += 1
                 logger.warning(f"Keepalive timeout ({self.keepalive_failures}/{KEEPALIVE_MAX_FAILURES})")
@@ -242,6 +246,9 @@ class DesktopRelay:
                 # BLE 写入异常（设备断开等），不崩溃，等 reconnect_loop 恢复
                 logger.warning(f"Keepalive send error: {e}")
                 self.keepalive_failures = 0
+            
+            # 发送心跳后等待指定间隔再发送下一次
+            await asyncio.sleep(KEEPALIVE_INTERVAL)
 
     async def run(self):
         try:
@@ -361,13 +368,14 @@ class DesktopRelay:
                                     # 配对流程结束，清除状态
                                     logger.debug(f"Cleaning up pairing state for {address}")
                                     await self._end_pairing()
-                                    # 断开连接
-                                    try:
-                                        if self.ble.is_connected:
-                                            await self.ble.disconnect()
-                                            logger.debug(f"Disconnected from {address}")
-                                    except Exception as disconnect_error:
-                                        logger.warning(f"Disconnect error: {disconnect_error}")
+                                    # 仅在配对失败时断开连接；成功时保持连接以供 keepalive 使用
+                                    if not success:
+                                        try:
+                                            if self.ble.is_connected:
+                                                await self.ble.disconnect()
+                                                logger.debug(f"Disconnected from {address}")
+                                        except Exception as disconnect_error:
+                                            logger.warning(f"Disconnect error: {disconnect_error}")
                                 
                                 if success:
                                     break

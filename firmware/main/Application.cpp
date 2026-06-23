@@ -350,7 +350,7 @@ void Application::play_rainbow_effect()
     
     for (int i = 0; i < total_cycles; i++) {
         // 关闭所有灯
-        led_controller_.all_off();
+        // led_controller_.all_off();
         
         // 计算当前颜色索引和灯号
         int color_idx = i % 7;      // 循环7种颜色
