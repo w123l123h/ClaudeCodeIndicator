@@ -83,10 +83,20 @@ class BleClientManager:
             await scanner.stop()
 
         dev_list = []
-        for addr, (device, adv) in scanner.discovered_devices.items():
-            name = adv.local_name or "(no name)"
-            rssi = adv.rssi if adv.rssi is not None else -999
-            dev_list.append((addr, name, rssi))
+        discovered = scanner.discovered_devices
+        if isinstance(discovered, dict):
+            for addr, (device, adv) in discovered.items():
+                name = adv.local_name or "(no name)"
+                rssi = adv.rssi if adv.rssi is not None else -999
+                dev_list.append((addr, name, rssi))
+        elif isinstance(discovered, list):
+            for device in discovered:
+                addr = device.address
+                name = getattr(device, 'name', None) or getattr(device, 'local_name', None) or "(no name)"
+                rssi = getattr(device, 'rssi', None)
+                if rssi is None:
+                    rssi = -999
+                dev_list.append((addr, name, rssi))
 
         dev_list.sort(key=lambda x: x[2], reverse=True)
 
