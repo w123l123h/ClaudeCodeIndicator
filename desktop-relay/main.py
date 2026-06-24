@@ -333,11 +333,8 @@ class DesktopRelay:
                 while not paired:
                     try:
                         paired_event = asyncio.Event()
-                        paired_address = None
 
                         async def _on_device_found(address, name, rssi):
-                            nonlocal paired_address
-
                             # 标准化地址（大写）用于比较
                             address = address.upper()
 
