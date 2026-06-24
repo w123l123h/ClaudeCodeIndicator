@@ -424,11 +424,10 @@ class DesktopRelay:
                                 pass
 
                         # 等待扫描自然结束
-                        if not scan_task.done():
-                            try:
-                                await scan_task
-                            except asyncio.CancelledError:
-                                pass
+                        try:
+                            await scan_task
+                        except asyncio.CancelledError:
+                            pass
 
                         if paired_event.is_set():
                             paired = True
