@@ -234,6 +234,20 @@ void LedStateManager::prepare_sleep(bool entering)
         }
         ESP_LOGI(TAG, "LEDs off for light sleep");
     }
+    else
+    {
+        // Wake from light sleep: restore LED2 to green blink
+        // (LED2 indicates advertising state; BLE resumes advertising after wake)
+        states_[2].timer = nullptr;
+        states_[2].blink = true;
+        states_[2].blink_ms = LED_BLINK_PERIOD_MS;
+        states_[2].blink_counter = 0;
+        states_[2].blink_on = false;
+        states_[2].r = led_color_advertising.r;
+        states_[2].g = led_color_advertising.g;
+        states_[2].b = led_color_advertising.b;
+        ESP_LOGI(TAG, "LED2 restored to advertising blink after wake");
+    }
 }
 
 bool LedStateManager::is_blinking(int id) const
