@@ -225,6 +225,48 @@ class DesktopRelay:
                 logger.warning(f"Disconnect error after exception: {disconnect_error}")
             return False
 
+    async def _try_pair_device(self, address: str, name: str,
+                               paired_event: asyncio.Event) -> bool:
+        """尝试连接并配对单个设备。成功返回 True，失败返回 False。"""
+        if not await self._start_pairing(address):
+            return False
+
+        success = False
+        try:
+            if await self.ble.connect_and_verify(address):
+                logger.debug(f"Connected to {address}, {name}, starting pairing flow")
+                if await self._pairing_flow(address, name):
+                    success = True
+                    paired_event.set()
+                    self._clear_queue()
+                    self.ble.stop_scan()
+                    logger.info(f"Pairing completed successfully with {address}")
+                else:
+                    logger.info(f"Pairing flow returned False for {address}")
+            else:
+                logger.warning(f"Failed to connect/verify {address}")
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout during pairing with {address}: {e}", exc_info=True)
+        except ConnectionError as e:
+            logger.error(f"Connection error during pairing with {address}: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Unexpected error during pairing with {address}: {e}", exc_info=True)
+        finally:
+            await self._end_pairing()
+            if not success:
+                try:
+                    if self.ble.is_connected:
+                        await self.ble.disconnect()
+                        logger.debug(f"Disconnected from {address}")
+                except Exception as disconnect_error:
+                    logger.warning(f"Disconnect error: {disconnect_error}")
+
+        if not success:
+            self._failed_devices.add(address)
+
+        return success
+
     async def _keepalive_task(self):
         logger.info("Keepalive task started")
         while True:
@@ -295,130 +337,43 @@ class DesktopRelay:
 
                         async def _on_device_found(address, name, rssi):
                             nonlocal paired_address
-                            
+
                             # 标准化地址（大写）用于比较
                             address = address.upper()
-                            
+
                             # 如果已经配对成功，跳过所有后续设备
                             if paired_event.is_set():
-                                logger.debug(f"Skipping {address}: already paired")
                                 return
-                            
+
                             # 检查设备是否正在配对中
                             async with self._pairing_lock:
                                 if self._pairing_address and self._pairing_address.upper() == address:
                                     logger.debug(f"Skipping {address}: device is being paired")
                                     return
-                            
+
                             # 检查设备是否已配对失败过
                             if address in self._failed_devices:
                                 logger.debug(f"Skipping {address}: device has been paired and failed before")
                                 return
-                            
-                            # 将设备添加到配对队列（包含去重检查）
-                            await self._enqueue_device(address, name, rssi)
-                            
-                            # 如果没有设备在配对中，从队列取出设备开始配对
-                            if self._pairing_in_progress:
-                                logger.debug(
-                                    f"Pairing in progress, {address} enqueued, "
-                                    f"queue size: {self._get_queue_size()}"
-                                )
-                                return
-                            
-                            # 从队列取出设备开始配对
-                            device = self._dequeue_device()
-                            if device is None:
-                                logger.debug("Queue empty after dequeue, no device to pair")
-                                return
-                            
-                            address = device['address']
-                            name = device['name']
-                            
-                            # 设置配对状态
-                            if not await self._start_pairing(address):
-                                logger.info(
-                                    f"Skipping {address}: pairing already in progress"
-                                )
-                                return
-                            
-                            # 注意：不要在这里 stop_scan()！
-                            # 否则 scan_devices() 会提前返回，paired_event 还未设置，
-                            # 外层代码会误认为配对失败并启动新一轮扫描。
-                            # stop_scan() 只在配对成功后调用（见下方 success 分支）。
 
-                            logger.info(f"Starting pairing attempt 1 with {address}")
-                            
-                            # 配对循环：失败后继续处理队列中的下一个设备
-                            attempt = 1
-                            while True:
-                                success = False
-                                try:
-                                    # 尝试连接和验证设备
-                                    logger.debug(f"Connecting to {address}, {name}...")
-                                    if await self.ble.connect_and_verify(address):
-                                        logger.debug(f"Connected to {address}, {name}, starting pairing flow")
-                                        if await self._pairing_flow(address, name):
-                                            success = True
-                                            paired_address = address
-                                            paired_event.set()
-                                            self._clear_queue()
-                                            # 配对成功后停止扫描
-                                            self.ble.stop_scan()
-                                            logger.info(f"Pairing completed successfully with {address}")
-                                        else:
-                                            logger.info(f"Pairing flow returned False for {address}")
-                                    else:
-                                        logger.warning(f"Failed to connect/verify {address}")
-                                        
-                                except asyncio.TimeoutError as e:
-                                    logger.error(f"Timeout during pairing with {address}: {e}", exc_info=True)
-                                except ConnectionError as e:
-                                    logger.error(f"Connection error during pairing with {address}: {e}", exc_info=True)
-                                except Exception as e:
-                                    logger.error(f"Unexpected error during pairing with {address}: {e}", exc_info=True)
-                                finally:
-                                    # 配对流程结束，清除状态
-                                    logger.debug(f"Cleaning up pairing state for {address}")
-                                    await self._end_pairing()
-                                    # 仅在配对失败时断开连接；成功时保持连接以供 keepalive 使用
-                                    if not success:
-                                        try:
-                                            if self.ble.is_connected:
-                                                await self.ble.disconnect()
-                                                logger.debug(f"Disconnected from {address}")
-                                        except Exception as disconnect_error:
-                                            logger.warning(f"Disconnect error: {disconnect_error}")
-                                
-                                if success:
-                                    break
-                                
-                                # 配对失败，记录设备到失败列表
-                                self._failed_devices.add(address)
-                                logger.info(f"Pairing failed with {address}, checking queue...")
-                                
-                                # 配对失败，检查队列是否有下一个设备
-                                device = self._dequeue_device()
-                                if device is None:
-                                    logger.info("Queue empty after pairing failure, will restart scan")
-                                    break
-                                
-                                attempt += 1
-                                logger.info(f"Continuing with next device from queue")
-                                
-                                address = device['address']
-                                name = device['name']
-                                rssi = device['rssi']
-                                
-                                # 设置新设备的配对状态
-                                if not await self._start_pairing(address):
-                                    logger.info(f"Skipping {address}: pairing already in progress")
-                                    continue
-                                
-                                logger.info(
-                                    f"Retrying with next device: {address} "
-                                    f"(RSSI={rssi}, name={name})"
-                                )
+                            # 一步：所有设备一律先入队
+                            await self._enqueue_device(address, name, rssi)
+
+                            # 二步：只有 ClaudeCodeIndicator 才立即连接
+                            if name != "ClaudeCodeIndicator":
+                                return
+
+                            # 三步：如果正在配对中，跳过（设备留在队列，由 _process_pairing_queue 处理）
+                            if self._pairing_in_progress:
+                                return
+
+                            # 四步：按地址精确出队（取出自己，不是队首）
+                            device = self._dequeue_device_by_address(address)
+                            if device is None:
+                                return
+
+                            logger.info(f"ClaudeCodeIndicator found, immediate pairing: {address}")
+                            await self._try_pair_device(address, name, paired_event)
 
                         await self.ble.scan_devices(detection_callback=_on_device_found)
 
