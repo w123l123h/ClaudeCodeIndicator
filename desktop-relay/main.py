@@ -111,7 +111,13 @@ class DesktopRelay:
         with self._queue_lock:
             for i, device in enumerate(self._pairing_queue):
                 if device['address'] == address:
-                    return self._pairing_queue.pop(i)
+                    removed = self._pairing_queue.pop(i)
+                    logger.info(
+                        f"Device dequeued by address: {address}, "
+                        f"remaining: {len(self._pairing_queue)}"
+                    )
+                    return removed
+        logger.debug(f"Device {address} not found in queue for dequeue_by_address")
         return None
 
     def _clear_queue(self) -> None:
