@@ -103,6 +103,14 @@ class DesktopRelay:
         logger.info(f"Device dequeued: {device['address']}, remaining: {len(self._pairing_queue)}")
         return device
 
+    def _dequeue_device_by_address(self, address: str) -> dict | None:
+        """按地址精确出队，返回设备信息字典，未找到返回 None"""
+        with self._queue_lock:
+            for i, device in enumerate(self._pairing_queue):
+                if device['address'] == address:
+                    return self._pairing_queue.pop(i)
+        return None
+
     def _clear_queue(self) -> None:
         """清空配对队列"""
         with self._queue_lock:
