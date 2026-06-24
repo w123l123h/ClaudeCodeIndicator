@@ -354,11 +354,12 @@ class DesktopRelay:
                     )
                     await asyncio.sleep(SAVED_RETRY_INTERVAL)
             else:
-                # 阶段2: 无已保存设备，阻塞式扫描+配对
+                # 阶段2: 无已保存设备，扫描+配对
                 paired = False
                 while not paired:
                     try:
                         paired_event = asyncio.Event()
+                        self._queue_processing_started = False
 
                         async def _on_device_found(address, name, rssi):
                             # 标准化地址（大写）用于比较
@@ -386,7 +387,7 @@ class DesktopRelay:
                             if name != "ClaudeCodeIndicator":
                                 return
 
-                            # 三步：如果正在配对中，跳过（设备留在队列，由 _process_pairing_queue 处理）
+                            # 三步：如果正在配对中，跳过（设备留在队列）
                             if self._pairing_in_progress:
                                 return
 
@@ -398,7 +399,36 @@ class DesktopRelay:
                             logger.info(f"ClaudeCodeIndicator found, immediate pairing: {address}")
                             await self._try_pair_device(address, name, paired_event)
 
-                        await self.ble.scan_devices(detection_callback=_on_device_found)
+                        # 并发：扫描 + 10秒计时器
+                        scan_task = asyncio.create_task(
+                            self.ble.scan_devices(detection_callback=_on_device_found)
+                        )
+                        timer_task = asyncio.create_task(asyncio.sleep(10))
+
+                        done, pending = await asyncio.wait(
+                            [scan_task, timer_task],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+
+                        # 防重复触发：先到先处理
+                        if not paired_event.is_set() and not self._queue_processing_started:
+                            self._queue_processing_started = True
+                            await self._process_pairing_queue(paired_event)
+
+                        # 取消未完成的计时器，保留扫描
+                        if not timer_task.done():
+                            timer_task.cancel()
+                            try:
+                                await timer_task
+                            except asyncio.CancelledError:
+                                pass
+
+                        # 等待扫描自然结束
+                        if not scan_task.done():
+                            try:
+                                await scan_task
+                            except asyncio.CancelledError:
+                                pass
 
                         if paired_event.is_set():
                             paired = True
@@ -407,7 +437,6 @@ class DesktopRelay:
                                 f"No devices found or paired, "
                                 f"retrying in {SCAN_RETRY_INTERVAL}s..."
                             )
-                            # 清空队列和失败设备列表，重新开始
                             self._clear_queue()
                             self._failed_devices.clear()
                             await asyncio.sleep(SCAN_RETRY_INTERVAL)
@@ -416,6 +445,8 @@ class DesktopRelay:
                             f"Scan/connect error: {e}, "
                             f"retrying in {SCAN_RETRY_INTERVAL}s..."
                         )
+                        self._clear_queue()
+                        self._failed_devices.clear()
                         await asyncio.sleep(SCAN_RETRY_INTERVAL)
 
             # 阶段3: 保活 + 重连
