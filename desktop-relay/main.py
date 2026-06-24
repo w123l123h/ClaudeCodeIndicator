@@ -247,6 +247,20 @@ class DesktopRelay:
                     self._clear_queue()
                     self.ble.stop_scan()
                     logger.info(f"Pairing completed successfully with {address}")
+
+                    # 配对成功后立即发送一次保活，防止 keepalive_task 启动前断连
+                    try:
+                        self.alive_event.clear()
+                        await self.ble.send("KEEPALIVE")
+                        await asyncio.wait_for(
+                            self.alive_event.wait(),
+                            timeout=KEEPALIVE_RESPONSE_TIMEOUT
+                        )
+                        logger.info("Initial keepalive OK after pairing")
+                    except asyncio.TimeoutError:
+                        logger.warning("Initial keepalive timeout after pairing")
+                    except Exception as e:
+                        logger.warning(f"Initial keepalive error after pairing: {e}")
                 else:
                     logger.info(f"Pairing flow returned False for {address}")
             else:
@@ -353,6 +367,20 @@ class DesktopRelay:
                             logger.info("Sent PAIR_SUCCESS to saved device")
                         except Exception as send_error:
                             logger.warning(f"Failed to send PAIR_SUCCESS: {send_error}")
+
+                        # 直连成功后立即发送一次保活，防止 keepalive_task 启动前断连
+                        try:
+                            self.alive_event.clear()
+                            await self.ble.send("KEEPALIVE")
+                            await asyncio.wait_for(
+                                self.alive_event.wait(),
+                                timeout=KEEPALIVE_RESPONSE_TIMEOUT
+                            )
+                            logger.info("Initial keepalive OK after direct connect")
+                        except asyncio.TimeoutError:
+                            logger.warning("Initial keepalive timeout after direct connect")
+                        except Exception as e:
+                            logger.warning(f"Initial keepalive error after direct connect: {e}")
                         break
                     logger.warning(
                         f"Failed to connect saved device, "
