@@ -9,6 +9,10 @@ static led_strip_handle_t g_strip = nullptr;
 
 void LedController::init()
 {
+    if (!mutex_) {
+        mutex_ = xSemaphoreCreateRecursiveMutex();
+    }
+
     led_strip_config_t strip_config = {};
     strip_config.strip_gpio_num = LED_GPIO;  // GPIO3
     strip_config.max_leds = WS2812_LED_COUNT;
@@ -26,11 +30,23 @@ void LedController::init()
     ESP_LOGI(TAG, "Initialized %d WS2812B LEDs on GPIO3", WS2812_LED_COUNT);
 }
 
+void LedController::reinit()
+{
+    if (g_strip) {
+        led_strip_del(g_strip);
+        g_strip = nullptr;
+    }
+    init();
+}
+
 void LedController::set_led(int index, LedColor color)
 {
     if (!g_strip || index < 0 || index >= WS2812_LED_COUNT) return;
+
+    xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
     ESP_ERROR_CHECK(led_strip_set_pixel(g_strip, index, color.r, color.g, color.b));
     ESP_ERROR_CHECK(led_strip_refresh(g_strip));
+    xSemaphoreGiveRecursive(mutex_);
 }
 
 void LedController::set_led(int index, uint8_t r, uint8_t g, uint8_t b)
@@ -41,13 +57,22 @@ void LedController::set_led(int index, uint8_t r, uint8_t g, uint8_t b)
 void LedController::all_off()
 {
     if (!g_strip) return;
+
+    xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
     ESP_ERROR_CHECK(led_strip_clear(g_strip));
+    xSemaphoreGiveRecursive(mutex_);
+
     ESP_LOGI(TAG, "All LEDs off");
 }
 
 void LedController::all_on(LedColor color)
 {
+    if (!g_strip) return;
+
+    xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
     for (int i = 0; i < WS2812_LED_COUNT; i++) {
-        set_led(i, color);
+        ESP_ERROR_CHECK(led_strip_set_pixel(g_strip, i, color.r, color.g, color.b));
     }
+    ESP_ERROR_CHECK(led_strip_refresh(g_strip));
+    xSemaphoreGiveRecursive(mutex_);
 }

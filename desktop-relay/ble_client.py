@@ -5,7 +5,9 @@ from bleak import BleakScanner, BleakClient
 from config import (
     BLE_SERVICE_UUID, BLE_CHAR_UUID, BLE_SCAN_TIMEOUT,
     DEVICE_CONFIG_FILE,
-    RECONNECT_BASE_DELAY,
+    CONNECT_TIMEOUT,
+    RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY,
+    RECONNECT_BACKOFF_MULTIPLIER,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,7 @@ class BleClientManager:
         self._scanner = None
         self._scan_stop_event = None
         self._discovered_devices = set()
+        self._disconnect_event = asyncio.Event()  # 断连时立即唤醒 reconnect_loop
 
     def set_message_callback(self, cb):
         self._message_callback = cb
@@ -126,7 +129,7 @@ class BleClientManager:
             self._connected = False
 
         try:
-            client = BleakClient(address, timeout=10.0, disconnected_callback=self._on_disconnect)
+            client = BleakClient(address, timeout=CONNECT_TIMEOUT, disconnected_callback=self._on_disconnect)
             await client.connect()
             logger.info(f"Connected to {address}, checking services...")
 
@@ -160,6 +163,7 @@ class BleClientManager:
         self._connected = False
         self._client = None
         self._char = None
+        self._disconnect_event.set()  # 立即唤醒 reconnect_loop
 
     def _on_notify(self, sender, data):
         msg = data.decode().strip()
@@ -198,6 +202,7 @@ class BleClientManager:
         logger.info("BLE cleanup complete")
 
     async def reconnect_loop(self):
+        delay = RECONNECT_BASE_DELAY  # 当前重试延迟，随失败次数指数增长
         while True:
             try:
                 if not self.is_connected:
@@ -211,6 +216,7 @@ class BleClientManager:
                     success = await self.connect_and_verify(saved)
                     if success:
                         logger.info("Reconnected successfully")
+                        delay = RECONNECT_BASE_DELAY  # 成功后重置退避
                         # 发送成功消息，通知设备连接成功
                         try:
                             await self.send("PAIR_SUCCESS")
@@ -219,11 +225,17 @@ class BleClientManager:
                             logger.warning(f"Failed to send PAIR_SUCCESS: {send_error}")
                             # 消息发送失败不影响重连状态
                     else:
-                        logger.warning(f"Reconnect failed, retrying in {RECONNECT_BASE_DELAY}s...")
-                        await asyncio.sleep(RECONNECT_BASE_DELAY)
+                        logger.warning(
+                            f"Reconnect failed, retrying in {delay}s "
+                            f"(max {RECONNECT_MAX_DELAY}s)..."
+                        )
+                        await asyncio.sleep(delay)
+                        # 指数退避：delay *= multiplier，不超过 max
+                        delay = min(delay * RECONNECT_BACKOFF_MULTIPLIER, RECONNECT_MAX_DELAY)
                 else:
-                    # 已连接时让出事件循环，避免忙循环饿死 keepalive 等任务
-                    await asyncio.sleep(1)
+                    # 已连接时等待断连事件（而非轮询），立即响应断连
+                    self._disconnect_event.clear()
+                    await self._disconnect_event.wait()
             except Exception as e:
                 logger.error(f"Reconnect loop error: {e}")
                 await asyncio.sleep(1)

@@ -169,23 +169,22 @@ void LedStateManager::set_connected(bool connected)
 
 void LedStateManager::set_charge_detected(bool detected)
 {
-
     for (int i = 0; i < LED_COUNT; i++)
     {
         states_[i].blink = true;
-        states_[2].blink_on = false;
+        states_[i].blink_on = false;
         states_[i].blink_ms = LED_BLINK_PERIOD_MS;
-        states_[2].blink_counter = 0;
+        states_[i].blink_counter = 0;
         if (detected)
         {
-            states_[i].r = 255;
+            states_[i].r = 20;
             states_[i].g = 0;
             states_[i].b = 0;
         }
         else
         {
             states_[i].r = 0;
-            states_[i].g = 255;
+            states_[i].g = 20;
             states_[i].b = 0;
         }
         set_timeout(i, 5);
@@ -236,8 +235,10 @@ void LedStateManager::prepare_sleep(bool entering)
     }
     else
     {
-        // Wake from light sleep: restore LED2 to green blink
-        // (LED2 indicates advertising state; BLE resumes advertising after wake)
+        // Wake from light sleep: re-init RMT (loses state during sleep),
+        // then restore LED2 to green blink
+        led_->reinit();
+
         states_[2].timer = nullptr;
         states_[2].blink = true;
         states_[2].blink_ms = LED_BLINK_PERIOD_MS;

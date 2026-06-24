@@ -266,12 +266,12 @@ void Application::init_charge_detect()
     io_conf.intr_type = GPIO_INTR_ANYEDGE;
     // 设置为输入模式
     io_conf.mode = GPIO_MODE_INPUT;
-    // 配置 GPIO10
+    // 配置 GPIO1
     io_conf.pin_bit_mask = (1ULL << CHARGE_DETECT_GPIO);
     // 禁用上拉电阻
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     // 启用下拉电阻
-    io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     // 应用配置
     gpio_config(&io_conf);
 
@@ -298,6 +298,13 @@ void Application::check_charge_status()
 {
     if (s_charge_detected)
     {
+        // static int i = 0;
+        // if(i ++ < 1000 / 50)
+        // {
+        //     return;
+        // }
+        // i = 0;
+
         s_charge_detected = false;
 
         uint32_t now = esp_log_timestamp();

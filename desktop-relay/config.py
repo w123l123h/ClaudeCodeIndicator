@@ -14,9 +14,10 @@ KEEPALIVE_RESPONSE_TIMEOUT = 3  # 秒
 KEEPALIVE_MAX_FAILURES = 3
 
 # 重连
-RECONNECT_BASE_DELAY = 1   # 秒
-RECONNECT_MAX_DELAY = 30   # 秒
-RECONNECT_BACKOFF_MULTIPLIER = 2
+CONNECT_TIMEOUT = 5.0               # BleakClient 连接超时（秒）
+RECONNECT_BASE_DELAY = 1            # 重连失败基础延迟（秒）
+RECONNECT_MAX_DELAY = 30            # 重连最大延迟（秒）
+RECONNECT_BACKOFF_MULTIPLIER = 2    # 指数退避倍数
 
 # 配对
 DEVICE_CONFIG_FILE = "device.json"
@@ -25,25 +26,25 @@ DEVICE_CONFIG_FILE = "device.json"
 EVENT_LED_MAP = {
     "WORKING": {
         "leds": [
-            {"id": 1, "on": True,  "r": 10, "g": 5, "b": 0, "timeout": 300},
+            {"id": 1, "on": True,  "r": 10, "g": 5, "b": 0, "timeout": 30},
             {"id": 2, "on": False},
         ]
     },
     "WAITING_USER": {
         "leds": [
-            {"id": 1, "on": True,  "r": 10, "g": 5, "b": 0, "blink": True, "blink_ms": 300, "timeout": 300},
+            {"id": 1, "on": True,  "r": 10, "g": 5, "b": 0, "blink": True, "blink_ms": 300, "timeout": 30},
             {"id": 2, "on": False},
         ]
     },
     "COMPLETED": {
         "leds": [
             {"id": 1, "on": False},
-            {"id": 2, "on": True,  "r": 0, "g": 10, "b": 0, "timeout": 300},
+            {"id": 2, "on": True,  "r": 0, "g": 10, "b": 0, "timeout": 30},
         ]
     },
     "ERROR": {
         "leds": [
-            {"id": 0, "on": True,  "r": 1, "g": 0, "b": 0, "timeout": 300},
+            {"id": 0, "on": True,  "r": 1, "g": 0, "b": 0, "timeout": 30},
             {"id": 1, "on": False},
             {"id": 2, "on": False},
         ]
