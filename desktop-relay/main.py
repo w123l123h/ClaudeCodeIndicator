@@ -42,6 +42,9 @@ class DesktopRelay:
         # 已配对失败过的设备（用于去重）
         self._failed_devices = set()
 
+        # 队列处理是否已启动（防重复触发）
+        self._queue_processing_started = False
+
         self.ble.set_message_callback(self._on_ble_message)
 
     async def shutdown(self):
