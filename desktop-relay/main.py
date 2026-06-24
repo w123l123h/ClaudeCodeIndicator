@@ -267,6 +267,32 @@ class DesktopRelay:
 
         return success
 
+    async def _process_pairing_queue(self, paired_event: asyncio.Event):
+        """按 RSSI 降序处理配对队列中的剩余设备（扫描结束/超时后调用）"""
+        with self._queue_lock:
+            devices = sorted(self._pairing_queue, key=lambda d: d['rssi'], reverse=True)
+            self._pairing_queue.clear()
+
+        if not devices:
+            logger.info("Queue empty, no devices to process")
+            return
+
+        logger.info(f"Processing queue: {len(devices)} devices sorted by RSSI")
+        for device in devices:
+            if paired_event.is_set():
+                logger.info("Already paired, stopping queue processing")
+                return
+
+            address = device['address']
+            name = device['name']
+            rssi = device['rssi']
+
+            logger.info(f"Trying device from queue: {address} (RSSI={rssi}, name={name})")
+            success = await self._try_pair_device(address, name, paired_event)
+            if success:
+                return
+            logger.info(f"Device {address} failed, trying next in queue...")
+
     async def _keepalive_task(self):
         logger.info("Keepalive task started")
         while True:
