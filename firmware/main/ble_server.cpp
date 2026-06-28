@@ -389,6 +389,14 @@ void BleServer::start_advertise()
 
 void BleServer::_advertise_with_retry()
 {
+    // 防重入保护：避免 ADV_COMPLETE 回调中再次调用
+    if (m_restarting_advertise)
+    {
+        ESP_LOGI(TAG, "Advertise restart already in progress, skipping");
+        return;
+    }
+    m_restarting_advertise = true;
+
     // 1. 先停止可能残留的广播，清 NimBLE 内部状态
     int rc = ble_gap_adv_stop();
     ESP_LOGI(TAG, "Adv stop returned: %d", rc);
@@ -410,8 +418,6 @@ void BleServer::_advertise_with_retry()
     struct ble_gap_adv_params adv_params = {};
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    // adv_params.itvl_min = 0x20; // 40ms 最小广播间隔 (0x20 * 0.625ms = 20ms, 但实际是 0x20 * 1.25ms = 40ms for adv)
-    // adv_params.itvl_max = 0x40; // 80ms 最大广播间隔
 
     int retry = 100; // 最多等 2 秒
     while (retry-- > 0)
@@ -433,6 +439,8 @@ void BleServer::_advertise_with_retry()
     {
         ESP_LOGI(TAG, "Advertising started");
     }
+
+    m_restarting_advertise = false;
 }
 
 void BleServer::enter_light_sleep()

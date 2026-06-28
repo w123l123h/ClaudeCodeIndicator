@@ -57,6 +57,9 @@ public:
     void enter_light_sleep();  // full cycle: suspend BLE, sleep, resume
     bool is_sleep_pending() const { return m_sleep_pending; }
 
+    // Start 30-min continuous advertising phase (called on initial boot + disconnect)
+    void start_phase1();
+
 private:
     // 断连后广播阶段
     enum class AdvPhase { NONE, PHASE1_CONTINUOUS, PHASE2_AWAKE, PHASE2_SLEEP };
@@ -71,6 +74,7 @@ private:
     ble_power_ctrl_cb_t m_power_cb = nullptr;
     ble_sleep_cb_t m_sleep_cb = nullptr;
     bool m_sleep_pending = false;  // set by phase2_cb, consumed by main loop
+    bool m_restarting_advertise = false;  // guard against re-entrant _advertise_with_retry
 
     uint16_t m_conn_handle = 0;
     uint8_t m_own_addr_type = 0;  // set in on_sync()
@@ -82,5 +86,4 @@ private:
     char m_device_name[64];
 
     void cancel_phase_timers();
-    void start_phase1();
 };

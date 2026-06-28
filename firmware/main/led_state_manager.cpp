@@ -227,6 +227,8 @@ void LedStateManager::prepare_sleep(bool entering)
             if (states_[i].timer)
             {
                 xTimerStop(states_[i].timer, 0);
+                xTimerDelete(states_[i].timer, 0);
+                states_[i].timer = nullptr;
             }
             states_[i].blink = false;
             states_[i].blink_counter = 0;
@@ -236,17 +238,18 @@ void LedStateManager::prepare_sleep(bool entering)
     else
     {
         // Wake from light sleep: re-init RMT (loses state during sleep),
-        // then restore LED2 to green blink
+        // then restore LED2 to advertising blink
         led_->reinit();
 
         states_[2].timer = nullptr;
         states_[2].blink = true;
         states_[2].blink_ms = LED_BLINK_PERIOD_MS;
         states_[2].blink_counter = 0;
-        states_[2].blink_on = false;
+        states_[2].blink_on = true;   // 立即点亮，避免唤醒后长暗
         states_[2].r = led_color_advertising.r;
         states_[2].g = led_color_advertising.g;
         states_[2].b = led_color_advertising.b;
+        led_->set_led(2, states_[2].r, states_[2].g, states_[2].b);  // 立即亮灯
         ESP_LOGI(TAG, "LED2 restored to advertising blink after wake");
     }
 }

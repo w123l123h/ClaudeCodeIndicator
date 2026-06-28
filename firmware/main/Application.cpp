@@ -79,6 +79,9 @@ void Application::run()
     // 启动 BLE 广播
     ble_server_.start_advertise();
 
+    // 启动 Phase 1：30 分钟连续广播后进入间歇性 sleep
+    ble_server_.start_phase1();
+
     // 等待连接：LED2 绿色闪烁
     led_state_manager_.apply_command(2, true, led_color_advertising.r, led_color_advertising.g, led_color_advertising.b, 0, true, LED_BLINK_PERIOD_MS);
 
