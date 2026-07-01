@@ -4,7 +4,5 @@
 * 3D模型地址：https://makerworld.com.cn/zh/models/2686548-claudecodezhi-shi-qi-hong-lu-deng#profileId-3109528
 
 ## 效果
-
-![红绿灯](.\res\红绿灯.jpeg)
-
-![红绿灯](.\res\红绿灯2.jpeg)
+<img src=".\res\红绿灯.jpeg" alt="红绿灯" width="30%">
+<img src=".\res\红绿灯2.jpeg" alt="红绿灯" width="50%">
