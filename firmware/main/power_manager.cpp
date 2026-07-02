@@ -62,29 +62,21 @@ void PowerManager::start()
 
 void PowerManager::enable()
 {
-    if (!m_pm_lock) {
-        ESP_LOGW(TAG, "PM enable: no lock handle (init failed?)");
-        return;
-    }
-    esp_err_t ret = esp_pm_lock_release(m_pm_lock);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "PM lock released — light sleep enabled (BLE connected)");
-        ESP_LOGI(TAG, "Dumping PM locks after release:");
-        esp_pm_dump_locks(stdout);
-    } else {
-        ESP_LOGW(TAG, "PM lock release failed: %s", esp_err_to_name(ret));
-    }
+    // BLE connected: keep PM lock acquired to prevent automatic CPU light sleep.
+    // CPU light sleep wake-up latency (~1ms+) can cause missed BLE connection
+    // events, eventually triggering supervision timeout (20s) on the Central.
+    // The BLE controller's modem sleep still saves RF power safely.
+    // Phase 2 manual light sleep (enter_light_sleep) handles power saving
+    // during disconnect independently.
+    ESP_LOGI(TAG, "PM lock held — light sleep blocked (BLE connected)");
 }
 
 void PowerManager::disable()
 {
-    if (!m_pm_lock) return;
-    esp_err_t ret = esp_pm_lock_acquire(m_pm_lock);
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "PM lock acquired — light sleep blocked (BLE disconnected)");
-    } else {
-        ESP_LOGW(TAG, "PM lock acquire failed: %s", esp_err_to_name(ret));
-    }
+    // BLE disconnected: keep PM lock acquired.
+    // Automatic light sleep stays blocked; Phase 2 manual sleep cycle
+    // (10s awake / 50s light sleep) handles power saving explicitly.
+    ESP_LOGI(TAG, "PM lock held — light sleep blocked (BLE disconnected)");
 }
 
 void PowerManager::on_activity()
