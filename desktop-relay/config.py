@@ -14,7 +14,7 @@ KEEPALIVE_RESPONSE_TIMEOUT = 3  # 秒
 KEEPALIVE_MAX_FAILURES = 3
 
 # 重连
-CONNECT_TIMEOUT = 5.0               # BleakClient 连接超时（秒）
+CONNECT_TIMEOUT = 15.0              # BleakClient 连接超时（秒）— Windows BLE 需要更长时间
 RECONNECT_BASE_DELAY = 1            # 重连失败基础延迟（秒）
 RECONNECT_MAX_DELAY = 30            # 重连最大延迟（秒）
 RECONNECT_BACKOFF_MULTIPLIER = 2    # 指数退避倍数

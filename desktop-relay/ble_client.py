@@ -117,7 +117,12 @@ class BleClientManager:
             logger.info("Scan stopped")
 
     async def connect_and_verify(self, address):
-        """连接并检查是否有目标 Service（含服务发现重试，兼容 Windows BLE 协议栈）"""
+        """连接并检查是否有目标 Service
+
+        Windows BLE 兼容性：
+        1. 先扫描获取 BLEDevice 对象（避免 FromBluetoothAddressAsync 查询失败）
+        2. connect() 带重试（Windows 首次连接经常 TimeoutError，第2次就成功）
+        """
         # 清理旧连接
         if self._client:
             try:
@@ -130,62 +135,77 @@ class BleClientManager:
 
         client = None
         try:
-            client = BleakClient(address, timeout=CONNECT_TIMEOUT, disconnected_callback=self._on_disconnect)
-            await client.connect()
-            logger.info(f"Connected to {address}, waiting for BLE stack to stabilize...")
-
-            # 等待 BLE 协议栈稳定（Windows 服务发现可能在连接后立即返回空结果）
-            await asyncio.sleep(0.5)
-
-            # 带重试的服务发现（Windows BLE 协议栈兼容性）
-            SERVICE_DISCOVERY_RETRIES = 3
-            SERVICE_DISCOVERY_RETRY_DELAY = 1.0
-
-            found_char = None
-            for attempt in range(SERVICE_DISCOVERY_RETRIES):
+            # Step 1: 扫描获取 BLEDevice（跳过 Windows 地址二次查询问题）
+            logger.info(f"Scanning for device {address}...")
+            target_device = None
+            for _ in range(3):  # 扫描重试
                 try:
-                    # 使用 get_services() 强制刷新服务发现（避免 client.services 缓存）
-                    services = await client.get_services()
-                    for service in services:
-                        if service.uuid == BLE_SERVICE_UUID:
-                            for char in service.characteristics:
-                                if char.uuid == BLE_CHAR_UUID:
-                                    found_char = char
-                                    break
-                            if found_char:
-                                break
+                    target_device = await BleakScanner.find_device_by_name(
+                        BLE_DEVICE_NAME_PREFIX, timeout=5
+                    )
+                    if target_device:
+                        break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+
+            if not target_device:
+                logger.warning(f"Device {address} not found in scan")
+                return False
+
+            logger.info(f"Found device: {target_device.address}")
+
+            # Step 2: connect() 带重试（Windows BLE 栈首次连接常超时）
+            CONNECT_RETRIES = 3
+            for attempt in range(CONNECT_RETRIES):
+                try:
+                    client = BleakClient(
+                        target_device,
+                        timeout=CONNECT_TIMEOUT,
+                        disconnected_callback=self._on_disconnect
+                    )
+                    await client.connect()
+                    logger.info(
+                        f"connect() OK (attempt {attempt + 1})"
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        f"connect() attempt {attempt + 1}/{CONNECT_RETRIES}: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    if attempt < CONNECT_RETRIES - 1:
+                        await asyncio.sleep(1.0)
+                    else:
+                        raise  # 所有重试都失败
+
+            # Step 3: 服务发现
+            found_char = None
+            for service in client.services:
+                if service.uuid == BLE_SERVICE_UUID:
+                    for char in service.characteristics:
+                        if char.uuid == BLE_CHAR_UUID:
+                            found_char = char
+                            break
                     if found_char:
                         break
-                    logger.warning(
-                        f"Service discovery attempt {attempt + 1}/{SERVICE_DISCOVERY_RETRIES}: "
-                        f"target char not found, retrying in {SERVICE_DISCOVERY_RETRY_DELAY}s..."
-                    )
-                    await asyncio.sleep(SERVICE_DISCOVERY_RETRY_DELAY)
-                except Exception as disc_err:
-                    logger.warning(
-                        f"Service discovery attempt {attempt + 1}/{SERVICE_DISCOVERY_RETRIES} "
-                        f"failed: {disc_err}"
-                    )
-                    if attempt < SERVICE_DISCOVERY_RETRIES - 1:
-                        await asyncio.sleep(SERVICE_DISCOVERY_RETRY_DELAY)
 
             if found_char:
                 self._client = client
                 self._char = found_char
                 self._connected = True
                 await self._client.start_notify(found_char.uuid, self._on_notify)
-                logger.info(f"Target device confirmed: {address}")
+                logger.info(f"Target device confirmed: {target_device.address}")
                 return True
             else:
-                logger.warning(
-                    f"Service discovery exhausted ({SERVICE_DISCOVERY_RETRIES} attempts): "
-                    f"target char not found on {address}"
-                )
+                logger.warning(f"Target char not found on {target_device.address}")
                 await client.disconnect()
                 return False
 
         except Exception as e:
-            logger.warning(f"Failed to connect {address}: {e}")
+            logger.warning(
+                f"Failed to connect {address}: {type(e).__name__}: {e}"
+            )
             if client and client.is_connected:
                 try:
                     await client.disconnect()
