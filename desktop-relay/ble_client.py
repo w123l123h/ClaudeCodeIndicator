@@ -4,7 +4,7 @@ from bleak import BleakScanner, BleakClient
 
 from config import (
     BLE_SERVICE_UUID, BLE_CHAR_UUID, BLE_SCAN_TIMEOUT,
-    DEVICE_CONFIG_FILE,
+    BLE_DEVICE_NAME_PREFIX, DEVICE_CONFIG_FILE,
     CONNECT_TIMEOUT,
     RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY,
     RECONNECT_BACKOFF_MULTIPLIER,
@@ -136,24 +136,19 @@ class BleClientManager:
         client = None
         try:
             # Step 1: 扫描获取 BLEDevice（跳过 Windows 地址二次查询问题）
-            logger.info(f"Scanning for device {address}...")
+            logger.info(f"Scanning for {BLE_DEVICE_NAME_PREFIX}...")
             target_device = None
-            for _ in range(3):  # 扫描重试
-                try:
-                    target_device = await BleakScanner.find_device_by_name(
-                        BLE_DEVICE_NAME_PREFIX, timeout=5
-                    )
-                    if target_device:
-                        break
-                except Exception:
-                    pass
-                await asyncio.sleep(0.5)
+            devices = await BleakScanner.discover(timeout=10, return_adv=True)
+            for _addr, (device, adv) in devices.items():
+                name = adv.local_name or ""
+                if name == BLE_DEVICE_NAME_PREFIX:
+                    target_device = device
+                    logger.info(f"Found: {_addr}")
+                    break
 
             if not target_device:
-                logger.warning(f"Device {address} not found in scan")
+                logger.warning(f"Device {BLE_DEVICE_NAME_PREFIX} not found in scan")
                 return False
-
-            logger.info(f"Found device: {target_device.address}")
 
             # Step 2: connect() 带重试（Windows BLE 栈首次连接常超时）
             CONNECT_RETRIES = 3
