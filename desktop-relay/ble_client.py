@@ -135,19 +135,20 @@ class BleClientManager:
 
         client = None
         try:
-            # Step 1: 扫描获取 BLEDevice（跳过 Windows 地址二次查询问题）
-            logger.info(f"Scanning for {BLE_DEVICE_NAME_PREFIX}...")
+            # Step 1: 短扫描拿 BLEDevice（绕过 Windows FromBluetoothAddressAsync 缺陷）
+            # 有 MAC 地址时直接按地址匹配，不做全量名
+            addr_upper = address.upper()
+            logger.info(f"Quick scan for {addr_upper}...")
             target_device = None
-            devices = await BleakScanner.discover(timeout=10, return_adv=True)
+            devices = await BleakScanner.discover(timeout=5, return_adv=True)
             for _addr, (device, adv) in devices.items():
-                name = adv.local_name or ""
-                if name == BLE_DEVICE_NAME_PREFIX:
+                if _addr.upper() == addr_upper:
                     target_device = device
                     logger.info(f"Found: {_addr}")
                     break
 
             if not target_device:
-                logger.warning(f"Device {BLE_DEVICE_NAME_PREFIX} not found in scan")
+                logger.warning(f"Device {addr_upper} not found in scan")
                 return False
 
             # Step 2: connect() 带重试（Windows BLE 栈首次连接常超时）
