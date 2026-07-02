@@ -48,14 +48,14 @@ extern LedColor led_color_off;
 #define BATTERY_VOLTAGE_DIVIDER     2.0f  // 分压 50%
 #define BATTERY_MOVING_AVG_SAMPLES  10
 
-// BLE 参数 - 优化连接稳定性
+// BLE 参数 - 优化连接稳定性（Windows BLE 适配器兼容）
 #define BLE_DEVICE_NAME_PREFIX      "ClaudeCodeIndicator"
 #define BLE_SERVICE_UUID            "0000ff00-0000-1000-8000-00805f9b34fb"
 #define BLE_CHAR_UUID               "0000ff01-0000-1000-8000-00805f9b34fb"
-#define BLE_CONN_INTERVAL_MIN       75    // ms - 最小连接间隔，降低延迟
-#define BLE_CONN_INTERVAL_MAX       150   // ms - 最大连接间隔，增加灵活性
-#define BLE_SUPERVISION_TIMEOUT     3000   // *10ms = 6000ms - 延长监督超时，避免误断连
-#define BLE_SLAVE_LATENCY           2     // 允许从机跳过2个连接事件，降低功耗
+#define BLE_CONN_INTERVAL_MIN       30    // ms - 最小连接间隔（加快响应，提升稳定性）
+#define BLE_CONN_INTERVAL_MAX       100   // ms - 最大连接间隔
+#define BLE_SUPERVISION_TIMEOUT     2000   // *10ms = 20s（给予充足容错，但不过长）
+#define BLE_SLAVE_LATENCY           0     // 不跳过连接事件，最大化稳定性
 
 // 数据看门狗超时 (ms)
 #define BLE_WATCHDOG_TIMEOUT_MS     30000

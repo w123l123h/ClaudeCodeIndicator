@@ -98,28 +98,8 @@ int BleServer::gap_event_cb(struct ble_gap_event *event, void *arg)
             if (self->m_conn_cb)
                 self->m_conn_cb(true);
 
-            // 设置连接参数（缩短 supervision timeout 到 4s）
-            {
-                struct ble_gap_upd_params params = {};
-                // ms → 1.25ms units: *4/5
-                params.itvl_min = (BLE_CONN_INTERVAL_MIN * 4) / 5;
-                params.itvl_max = (BLE_CONN_INTERVAL_MAX * 4) / 5;
-                params.latency = BLE_SLAVE_LATENCY;
-                params.supervision_timeout = BLE_SUPERVISION_TIMEOUT; // *10ms
-                params.min_ce_len = 0;
-                params.max_ce_len = 0;
-                int rc = ble_gap_update_params(self->m_conn_handle, &params);
-                if (rc != 0)
-                {
-                    ESP_LOGW(TAG, "ble_gap_update_params failed: %d", rc);
-                }
-                else
-                {
-                    ESP_LOGI(TAG, "Connection params set: itvl=%d-%dms, sup_to=%dms",
-                             BLE_CONN_INTERVAL_MIN, BLE_CONN_INTERVAL_MAX,
-                             BLE_SUPERVISION_TIMEOUT * 10);
-                }
-            }
+            // 不主动发起参数更新，由 Central（Windows）主导协商
+            // 这避免了某些 Windows BLE 适配器的兼容性问题
 
             // Start watchdog immediately on connect.
             // PAIR_CONFIRM will stop it if user needs time to confirm pairing.
